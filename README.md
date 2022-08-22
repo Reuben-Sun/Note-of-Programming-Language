@@ -36,4 +36,6 @@
 
 ### 五：Standard C++
 
+[开始阅读](https://github.com/Reuben-Sun/Note-of-Programming-Language/blob/main/StandardC%2B%2B.md#standard-c)
+
 《C++标准库》笔记，了解一些C++11和STL，对于面试有不少帮助
