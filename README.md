@@ -18,7 +18,13 @@
 
 《垃圾回收的算法与实现》笔记，通过GC算法回顾机组、操作系统、编译原理
 
-### 三：算法
+### 三：Standard C++
+
+[开始阅读](https://github.com/Reuben-Sun/Note-of-Programming-Language/blob/main/StandardC%2B%2B.md#standard-c)
+
+《C++标准库》笔记，了解一些C++11和STL，对于面试有不少帮助
+
+### 四：算法
 
 [开始阅读](https://github.com/Reuben-Sun/Note-of-Programming-Language/blob/main/%E7%AE%97%E6%B3%95.md#%E7%AE%97%E6%B3%95)
 
@@ -26,7 +32,7 @@
 
 此外本人没接触过竞赛，算法水平很差，目标就是能做中等难度的题，此外笔记中有些题目和题解可能忘记标出处，抱歉
 
-### 四：面试题
+### 五：面试题
 
 [开始阅读](https://github.com/Reuben-Sun/Note-of-Programming-Language/blob/main/%E9%9D%A2%E8%AF%95%E9%A2%98.md#%E9%9D%A2%E8%AF%95%E9%A2%98)
 
@@ -34,8 +40,3 @@
 
 以问答的形式记录一些零散的C++知识
 
-### 五：Standard C++
-
-[开始阅读](https://github.com/Reuben-Sun/Note-of-Programming-Language/blob/main/StandardC%2B%2B.md#standard-c)
-
-《C++标准库》笔记，了解一些C++11和STL，对于面试有不少帮助
