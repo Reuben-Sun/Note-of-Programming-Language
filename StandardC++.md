@@ -247,6 +247,15 @@ auto add(T1 x, T2 y) -> decltype(x+y){
 
 ## 二：一般概念
 
+### 可被调用的对象
+
+Callable Object，一种对象，可以通过某些方式调用其某些函数，它可以是
+
+- 函数
+- 指向成员函数的指针
+- 函数对象
+- lambda表达式
+
 ## 三：通用工具
 
 ### pair
@@ -286,13 +295,166 @@ int main() {
 
 - shared_ptr：共享式拥有
   - 多个指针可以指向一个资源，通过引用计数法GC
-  - 为了解决引用计数法的缺点，提供weak_ptr等辅助类
+  - 为了解决引用计数法的缺点（比如循环引用），提供weak_ptr等辅助类
 - unique_ptr：独占式拥有
   - 同一时间只能有一个unique_ptr指向某个资源，可以进行拥有权的移交
 
+### 极值
 
+Numeric Limit
 
+用于得到当前平台下，一些数值类型的长度（大小）
 
+### Trait
 
+是一种技术方案，用来为同一类数据提供统一的操作函数，核心就是使用另外的模版类`type_traits`存储不同数据类型的`type`，这样就可以兼容各种数据类型
 
+### 外覆器
+
+#### Reference Wrapper
+
+允许函数模板可以操作引用，不需要写特化版本
+
+具体有两个函数
+
+- ref：隐式转化为`T&`
+- cref：隐式转化为`const T &`
+
+```c++
+template <typename T>
+void fun(T v);
+
+int x;
+fun(std::ref(x));	//此时T为int&
+
+int x;
+fun(std::cref(x));	//此时T为const int&
+```
+
+#### Function Type Wrapper
+
+允许将可调用对象当作最高级对象（first-class object）
+
+```c++
+vector<function<void(int, int)>> tasks;	//一个存储多个可调用对象的vector
+tasks.push_back(func);	//void func(int x, int y);
+tasks.push_back([] (int x, int y) {...});	//添加一个lambda表达式
+
+for(function<void(int, int)> f : tasks){
+    f(36, 36);	//遍历所有的可调用对象，并调用
+}
+```
+
+### 辅助函数
+
+- min
+- max
+- swap
+- operator
+  - `==`
+  - `!=`
+  - `>`
+  - `<`
+  - `>=`
+  - `<=`
+
+### 编译期分数运算
+
+```c++
+ratio<5, 5> one;
+cout << one.num << "/" << one.den << endl;	// 1/1
+
+ratio<5, 3> two;
+cout << two.num << "/" << two.den << endl;	// 5/3
+```
+
+## 四：STL
+
+STL是C++标准库的核心，是一个泛型（generic）程序库，由三部分组成
+
+- 容器（Container）
+- 迭代器（Iterator）
+- 算法（Algorithm）
+
+### 容器
+
+#### 有序容器
+
+顺序与插入顺序有关，与元素值无关，常常通过array、linked list实现
+
+- array
+- vector
+- deque
+- list
+- forward_list
+
+#### 关联式容器
+
+在内部进行排序的集合，位置取决于value，常常通过二叉树实现
+
+- set
+- multiset（mult的意思是元素可以重复）
+- map
+- multimap（mult的意思是key可以重复）
+
+#### 无序容器
+
+元素位置无关紧要，重要的是元素是否在容器内，常常通过哈希表实现
+
+- unordered_set
+- unordered_multiset
+- unordered_map
+- unordered_multmap
+
+#### 其他容器
+
+- string
+- 寻常的数组（一种type，而非class）
+
+### 迭代器
+
+迭代器是一个可以遍历STL容器全部、部分元素的对象
+
+#### 操作
+
+- `*`：取元素
+- `++`：迭代器前进至下一个元素
+  - 注意，`++i`比`i++`效率高一点点，因为后者要创建临时对象
+- `==`、`!=`：判断两个迭代器是否指向同一个位置
+- `=`：赋值
+
+### 种类
+
+- 前向迭代器
+- 双向迭代器
+  - list、set、map
+- 随机访问迭代器
+  - vector、deque、array、string
+
+- 输入型迭代器
+  - Input stream
+- 输出型迭代器
+  - Output stream
+
+### 算法
+
+大多为非成员函数，思想是泛型编程（而不是OOP）
+
+### 函数对象
+
+一个行为像函数的对象，思想是泛型编程
+
+```c++
+class X{
+public:
+    int operator() (int a, int b) const;
+};
+...
+X fo;
+fo(arg1, arg2);	//等同于fo.operator()(arg1, arg2);
+```
+
+- 函数对象是一个带状态的函数
+- 函数对象有自己的类型
+- 函数对象速度通常比普通函数快（编译期间有更好的优化）
 
