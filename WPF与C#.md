@@ -305,6 +305,16 @@ class ClassAToClassBConverter : IValueConverter
 
 ## 二、属性
 
+### 英语中的属性
+
+Property是物体自带的属性
+
+Attribute是物体的描述属性
+
+张三是中国人，身上有一百块钱。中国人是张三的Attribute, 100块钱是张三的property
+
+### C#中的属性
+
 将字段设为private，使用一对非private的方法来包装它，以实现**高内聚**
 
 C#中提供语法糖，将Get和Set合并为了属性（Property），这种属性也被称为CLR（Common Language Runtime）属性
