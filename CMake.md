@@ -302,7 +302,25 @@ else()
 endlf()
 ```
 
-### 三：检测外部库和程序
+### CLion CMake
+
+#### 链接静态库
+
+1. 在项目根目录新建lib文件夹
+2. 将要链接的静态库（`test_library.a`）复制到lib文件夹中
+3. 找包
+
+```cmake
+find_library(TEXT_LIBRARY test_library lib)
+```
+
+4. 链接
+
+```cmake
+target_link_libraries(testapp LINK_PUBLIC &{TEST_LIBRARY})
+```
+
+#### 链接动态库
 
 
 
