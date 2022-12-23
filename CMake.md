@@ -2,8 +2,6 @@
 
 ## 小鹏老师笔记
 
-[小鹏老师](https://www.bilibili.com/video/BV1V84y117YU)
-
 ### C++项目结构
 
 一个大项目（Project）内嵌多个子项目（SubProject）
@@ -52,8 +50,6 @@ find_package(OpenCV REQUIRED)
 ## CMake菜谱
 
 ### 一：从可执行文件到库
-
-[CMake菜谱](https://www.bookstack.cn/read/CMake-Cookbook/content-preface-preface-chinese.md)
 
 #### CMakeLists.txt
 
@@ -172,4 +168,148 @@ set(BUILD_SHARED_LIBS OFF)
 
 当设置为OFF时，可以使`add_library`不用传递第二个参数
 
-#### 向用户显示选项
+#### 用户选项
+
+在上面我们引入了一个条件语句，但是是硬编码的。我们希望用户可以控制`USE_LIBRARY`，于是可以使用`option`
+
+```cmake
+#set(USE_LIBRARY OFF)
+option(USE_LIBRARY "Compile sources into a library" OFF)
+```
+
+将上面下面的`set`替换为`option`，运行
+
+```shell
+$cmake -D USE_LIBRARY=ON
+```
+
+如果是Clion可以配置
+
+![Clion-Option](Image/Clion-Option.png)
+
+#### 构建类型
+
+| 类型           | 有无优化               |
+| -------------- | ---------------------- |
+| Debug          | 没有优化，带调试符号   |
+| Release        | 有优化，没有调试符号   |
+| RelWithDebInfo | 有少量优化，带调试符号 |
+| MinSizeRel     | 不增加代码大小来优化   |
+
+#### 编译选项
+
+```cmake
+cmake_minimum_required(VERSION 3.20)
+project(CMakeStudy LANGUAGES CXX)
+
+list(APPEND flags "-fPIC" "-Wall")
+if(NOT WIN32)
+    list(APPEND flags "-Wextra" "-Wpedantic")
+endif()
+#添加一个库
+add_library(message
+    STATIC
+        Message.h
+        Message.cpp
+)
+#为库设置编译选项
+target_compile_options(message
+    PRIVATE
+        ${flags}
+)
+#添加可执行目标
+add_executable(hello main.cpp)
+#为可执行目标设置编译选项
+target_compile_options(hello
+    PRIVATE
+        "-fPIC"
+)
+#链接
+target_link_libraries(hello message)
+```
+
+| 可见性    | 含义                                                         |
+| --------- | ------------------------------------------------------------ |
+| PRIVATE   | 编译选项仅对目标生效，不会传递（hello链接了message，但不会接受message的编译选项） |
+| INTERFACE | 编译选项对目标生效，并传递给相关目标                         |
+| PUBLIC    | 编译选项对目标和使用它的目标生效                             |
+
+`-Wall`、`-Wextra`等是警告标志
+
+#### 循环
+
+```cmake
+foreach(_source ${sources_with_lower_optimization})
+  get_source_file_property(_flags ${_source} COMPILE_FLAGS)
+  message(STATUS "Source ${_source} has the following extra COMPILE_FLAGS: ${_flags}")
+endforeach()
+```
+
+### 二：检查环境
+
+#### 检查平台
+
+我们要处理如下的C++源码（hello-world.cpp）
+
+```c++
+std::string say_hello() {
+#ifdef IS_WINDOWS
+  return std::string("Hello from Windows!");
+#elif IS_LINUX
+  return std::string("Hello from Linux!");
+#elif IS_MACOS
+  return std::string("Hello from macOS!");
+#else
+  return std::string("Hello from an unknown system!");
+#endif
+}
+```
+
+CMake可以加入
+
+```cmake
+#查询操作系统
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	#设置宏
+  target_compile_definitions(hello-world PUBLIC "IS_LINUX")
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  target_compile_definitions(hello-world PUBLIC "IS_MACOS")
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+  target_compile_definitions(hello-world PUBLIC "IS_WINDOWS")
+endif()
+```
+
+#### 检查编译器
+
+```cmake
+if(CMAKE_CXX_COMPILER_ID MATCHES Intel)
+	...
+endif()
+if(CMAKE_CXX_COMPILER_ID MATCHES GNU)
+	...
+...
+```
+
+#### 检查处理器架构
+
+```cmake
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+	#64bits
+else()
+	#32bits
+endlf()
+```
+
+### 三：检测外部库和程序
+
+
+
+## 参考资料
+
+[Clion CMake](https://www.jetbrains.com/help/clion/quick-cmake-tutorial.html?keymap=secondary_macos#seealso)
+
+[CMake菜谱](https://www.bookstack.cn/read/CMake-Cookbook/content-preface-preface-chinese.md)
+
+[小鹏老师](https://www.bilibili.com/video/BV1V84y117YU)

@@ -45,3 +45,10 @@
 [开始阅读](https://github.com/Reuben-Sun/Note-of-Programming-Language/blob/main/WPF%E4%B8%8EC%23.md#wpf%E4%B8%8Ec)
 
 最近开始维护一个基于WPF的引擎，感觉WPF的C#有不少自己的东西
+
+### 七：CMake
+
+### 八：环境配置
+
+
+
