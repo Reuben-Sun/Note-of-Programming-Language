@@ -48,7 +48,9 @@
 
 ### 七：CMake
 
+[开始阅读](https://github.com/Reuben-Sun/Note-of-Programming-Language/blob/main/CMake.md)
+
 ### 八：环境配置
 
-
+[开始阅读](https://github.com/Reuben-Sun/Note-of-Programming-Language/blob/main/%E7%8E%AF%E5%A2%83%E9%85%8D%E7%BD%AE.md)
 
