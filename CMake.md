@@ -156,6 +156,17 @@ set(BUILD_SHARED_LIBS OFF)
 
 当设置为OFF时，可以使`add_library`不用传递第二个参数
 
+| 变量名                         | 含义                       |
+| ------------------------------ | -------------------------- |
+| CMAKE_RUNTIME_OUTPUT_DIRECTORY | .exe、.dll文件的输出路径   |
+| CMAKE_ARCHIVE_OUTPUT_DIRECTORY | .a文件的输出路径           |
+| CMAKE_LIBRARY_OUTPUT_DIRECTORY | .so文件的输出路径          |
+| CMAKE_CURRENT_SOURCE_DIR       | 当前CMakeLists.txt所在路径 |
+| PROJECT_NAME                   | 项目名字                   |
+| CMAKE_MODULE_PATH              | cmake模块所在路径          |
+
+
+
 ### 用户选项
 
 在上面我们引入了一个条件语句，但是是硬编码的。我们希望用户可以控制`USE_LIBRARY`，于是可以使用`option`
@@ -301,7 +312,20 @@ endlf()
 find_package(OpenCV REQUIRED)
 ```
 
-该函数的本质就是去寻找一个`包名-config.cmake`文件
+该函数的本质就是去（先去标准路径）寻找一个`包名-config.cmake`文件
+
+在mac，找OpenCV找的可能就是
+
+```
+/usr/lib/cmake/OpenCV/OpenCVConfig.cmake
+```
+
+如果你安装的位置不是标准路径，你可以
+
+- 在build时手动指定`-xxx_DIR="aaa/lib/cmake/xxx"`
+  - 只有第一次指定，只要不删掉build目录，就不需要重新指定
+- 可以在CMakeLists.txt**最开头**写`set(xx_DIR "aaa/lib/cmake/xxx")`、
+- 可以给`xxx_DIR`设置环境变量
 
 ### 链接静态库
 
