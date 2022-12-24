@@ -97,6 +97,8 @@ target_link_libraries(hello message)
 
 #### add_library
 
+生成一个名叫`message`的库
+
 ```cmake
 add_library(message STATIC Message.h Message.cpp)
 ```
@@ -290,9 +292,12 @@ endlf()
 
 ## 三：链接外部库
 
-查找名为OpenCV的包，如果没找到就报错
+### 语法
+
+#### find_package
 
 ```cmake
+#查找名为OpenCV的包，如果没找到就报错
 find_package(OpenCV REQUIRED)
 ```
 
@@ -366,7 +371,12 @@ int main(int argc, char **argv){
 
 ### brew的用法
 
-这里提一嘴Homebrew，这是一个mac上非常好用的包管理器，可以非常“优雅”地安装软件（安装在`/usr/local/Cellar`目录，安装目录软链接到`/usr/local/opt`，bin目录执行文件链接到`/usr/local/bin`中（opt也有可能在根目录）
+这里提一嘴Homebrew，这是一个mac上非常好用的包管理器，可以非常“优雅”地安装软件
+
+brew会把软件安装在`/usr/local/Cellar`目录
+
+- 安装目录软链接到`/usr/local/opt`
+- bin目录执行文件链接到`/usr/local/bin`中（opt也有可能在根目录）
 
 常用命令
 
@@ -394,7 +404,65 @@ $ brew cleanup git   # 清理单个已安装软件包的历史版本
 $ brew cleanup -n    # 查看哪些软件包要被清除
 ```
 
+## 四：项目
 
+### 模块
+
+我们可以将一个大的CMake源码分成一个个模块，将这些模块放在`cmake`文件夹里，后缀为`.cmake`
+
+如下的项目结构
+
+```
+.
+├── cmake
+│     └── colors.cmake
+└── CMakeLists.txt
+```
+
+`cmake/colors.cmake`文件内包含了一个色彩输出的定义
+
+```cmake
+macro(define_colors)
+  if(WIN32)
+    # has no effect on WIN32
+    set(ColourReset "")
+    set(ColourBold "")
+    set(Red "")
+    set(Green "")
+    set(Yellow "")
+    set(Blue "")
+   	...
+  else()
+    string(ASCII 27 Esc)
+    set(ColourReset "${Esc}[m")
+    set(ColourBold "${Esc}[1m")
+    set(Red "${Esc}[31m")
+    set(Green "${Esc}[32m")
+    set(Yellow "${Esc}[33m")
+    set(Blue "${Esc}[34m")
+    ...
+  endif()
+endmacro()
+```
+
+在`CMakeLists.txt`引用
+
+```cmake
+#将/cmake目录添加到路径列表
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+#引入colors.cmake
+include(colors)
+#使用定义
+define_colors()
+```
+
+### 函数
+
+```cmake
+function(函数名 参数1 参数2)
+	...
+endfunction()
+```
 
 
 
