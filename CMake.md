@@ -1,8 +1,6 @@
 # CMake
 
-## 小鹏老师笔记
-
-### C++项目结构
+## 快速入门
 
 一个大项目（Project）内嵌多个子项目（SubProject）
 
@@ -37,21 +35,9 @@ add_library(subProject2 STATIC ${srcs})
 target_include_directories(subProject2 PUBLIC include)
 ```
 
-### 第三方库
+## 一：CMake基础语法
 
-查找名为OpenCV的包，如果没找到就报错
-
-```cmake
-find_package(OpenCV REQUIRED)
-```
-
-该函数的本质就是去寻找一个`包名-config.cmake`文件
-
-## CMake菜谱
-
-### 一：从可执行文件到库
-
-#### CMakeLists.txt
+### CMakeLists.txt
 
 我们将CMake指令放在`CMakeLists.txt`文件中
 
@@ -68,7 +54,7 @@ add_executable(CMakeStudy main.cpp)
 - CMake语言不区分大小写，但参数区分大小写
 - CMake的缺省默认语言为C++
 
-#### 构建
+### 构建
 
 写好`CMakeLists.txt`文件后，在命令行中输入：
 
@@ -80,7 +66,7 @@ $cmake -H. -Bbuild
 
 一般我们不会在源码内部构建，因为这会污染源码的目录树
 
-#### 链接
+### 链接
 
 如果项目中有多个文件，如
 
@@ -109,7 +95,7 @@ target_link_libraries(hello message)
 
 此外，我们能在buid目录中找到一个名为/形如`libmessage.a`的文件，这就是编译得到的静态库
 
-##### add_library
+#### add_library
 
 ```cmake
 add_library(message STATIC Message.h Message.cpp)
@@ -153,12 +139,12 @@ else()
 endif()
 ```
 
-##### 逻辑变量
+#### 逻辑变量
 
 - true：`1`、`ON`、`YES`、`true`、`Y`、非零数
 - false：`0`、`OFF`、`NO`、`false`、`N`、`IGNORE`、`NOTFOUND`、空字符串、以`-NOTFOUND`为后缀
 
-##### 全局变量
+#### 全局变量
 
 CMake有一些全局变量，修改他们可以起到配置作用，这里设置的
 
@@ -168,7 +154,7 @@ set(BUILD_SHARED_LIBS OFF)
 
 当设置为OFF时，可以使`add_library`不用传递第二个参数
 
-#### 用户选项
+### 用户选项
 
 在上面我们引入了一个条件语句，但是是硬编码的。我们希望用户可以控制`USE_LIBRARY`，于是可以使用`option`
 
@@ -187,7 +173,7 @@ $cmake -D USE_LIBRARY=ON
 
 ![Clion-Option](Image/Clion-Option.png)
 
-#### 构建类型
+### 构建类型
 
 | 类型           | 有无优化               |
 | -------------- | ---------------------- |
@@ -196,7 +182,7 @@ $cmake -D USE_LIBRARY=ON
 | RelWithDebInfo | 有少量优化，带调试符号 |
 | MinSizeRel     | 不增加代码大小来优化   |
 
-#### 编译选项
+### 编译选项
 
 ```cmake
 cmake_minimum_required(VERSION 3.20)
@@ -236,7 +222,7 @@ target_link_libraries(hello message)
 
 `-Wall`、`-Wextra`等是警告标志
 
-#### 循环
+### 循环
 
 ```cmake
 foreach(_source ${sources_with_lower_optimization})
@@ -245,9 +231,9 @@ foreach(_source ${sources_with_lower_optimization})
 endforeach()
 ```
 
-### 二：检查环境
+## 二：环境检查
 
-#### 检查平台
+### 检查平台
 
 我们要处理如下的C++源码（hello-world.cpp）
 
@@ -281,7 +267,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
 endif()
 ```
 
-#### 检查编译器
+### 检查编译器
 
 ```cmake
 if(CMAKE_CXX_COMPILER_ID MATCHES Intel)
@@ -292,7 +278,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES GNU)
 ...
 ```
 
-#### 检查处理器架构
+### 检查处理器架构
 
 ```cmake
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -302,9 +288,17 @@ else()
 endlf()
 ```
 
-### CLion CMake
+## 三：链接外部库
 
-#### 链接静态库
+查找名为OpenCV的包，如果没找到就报错
+
+```cmake
+find_package(OpenCV REQUIRED)
+```
+
+该函数的本质就是去寻找一个`包名-config.cmake`文件
+
+### 链接静态库
 
 1. 在项目根目录新建lib文件夹
 2. 将要链接的静态库（`test_library.a`）复制到lib文件夹中
@@ -320,7 +314,87 @@ find_library(TEXT_LIBRARY test_library lib)
 target_link_libraries(testapp LINK_PUBLIC &{TEST_LIBRARY})
 ```
 
-#### 链接动态库
+### 链接动态库
+
+### 常用库
+
+#### Eigen
+
+Eigen是一个纯头文件实现的线性代数库，在mac上可以使用brew安装
+
+1. 安装（记住eigen的版本）
+
+```shell
+$brew install eigen
+```
+
+2. 将Eigen链接到系统文件夹（brew一般会自动链接）
+
+```shell
+$brew link --overwrite eigen
+```
+
+3. 链接
+
+```cmake
+#寻找Eigen包，并附带包版本
+find_package(Eigen3 3.4 REQUIRED CONFIG)
+#若找到，则打印信息
+if (TARGET Eigen3::Eigen)
+    message(STATUS "Eigen3 ${EIGEN3_VERSION_STRING} found in ${EIGEN3_INCLUDE_DIR}")
+endif ()
+#目标
+add_executable(path-info main.cpp)
+#链接
+target_link_libraries(path-info
+        PUBLIC
+        Eigen3::Eigen
+        )
+```
+
+```c++
+#include <iostream>
+#include <Eigen/Dense>
+
+int main(int argc, char **argv){
+    int dim = std::atoi(argv[1]);
+    Eigen::MatrixXd A = Eigen::MatrixXd::Random(dim, dim);
+    std::cout << A;
+    return 0;
+}
+```
+
+### brew的用法
+
+这里提一嘴Homebrew，这是一个mac上非常好用的包管理器，可以非常“优雅”地安装软件（安装在`/usr/local/Cellar`目录，安装目录软链接到`/usr/local/opt`，bin目录执行文件链接到`/usr/local/bin`中（opt也有可能在根目录）
+
+常用命令
+
+```bash
+$ brew -v     # 安装完成后可以查看版本
+$ brew --help # 简洁命令帮助
+$ man brew    # 完整命令帮助
+
+$ brew search git    # 搜索软件包
+$ brew info git      # 查看软件包信息
+$ brew home git      # 访问软件包官方站(用浏览器打开)
+
+$ brew install git   # 安装软件包(这里是示例安装Git版本控制)
+$ brew uninstall git # 卸载软件包
+$ brew list          # 显示已经安装的所有软件包
+$ brew list --versions # 查看你安装过的包列表（包括版本号）
+
+$ brew update        # 同步远程最新更新情况，对本机已经安装并有更新的软件用*标明
+$ brew outdated      # 查看已安装的哪些软件包需要更新
+$ brew upgrade git   # 更新单个软件包
+$ brew deps php      # 显示包依赖
+
+$ brew cleanup       # 清理所有已安装软件包的历史老版本
+$ brew cleanup git   # 清理单个已安装软件包的历史版本
+$ brew cleanup -n    # 查看哪些软件包要被清除
+```
+
+
 
 
 
