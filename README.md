@@ -54,3 +54,6 @@
 
 [开始阅读](https://github.com/Reuben-Sun/Note-of-Programming-Language/blob/main/%E7%8E%AF%E5%A2%83%E9%85%8D%E7%BD%AE.md)
 
+### 九：高性能C++
+
+[开始阅读](https://github.com/Reuben-Sun/Note-of-Programming-Language/blob/main/%E9%AB%98%E6%80%A7%E8%83%BDC%2B%2B.md)
