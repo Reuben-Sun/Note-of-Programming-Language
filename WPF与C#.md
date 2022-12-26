@@ -1,6 +1,68 @@
 # WPF与C#
 
-## 一、Binding
+## 一、C#语法
+
+### 委托
+
+C#的委托类似于C++的函数指针
+
+```c#
+delegate int Func(int a, int b);
+
+class Adder{
+  private int c = 0;
+  
+  public Adder(int c){ this.c = c; }
+  
+  public int Add(int a, int b){ return a+b; }
+}
+
+Adder adder = new Adder(1);
+Func f = adder.Add;
+f(2,3);	//return 6
+```
+
+C#中，将参数`a,b`委托给了对象adder的Add方法，委托本质上是一种支持`()`运算符的**对象**。既然是对象，就可以有自己的成员和状态
+
+```c++
+typedef int(*Func)(int a, int b);
+
+int Add(int a, int b){
+    return a+b;
+}
+
+int main(int argc, char **argv){
+    Func func = Add;
+    std::cout << func(1,2);	//cout 3
+    return 0;
+}
+```
+
+C++的函数指针是一个指向函数入口的指针，不具有对象的性质，只能指向非成员函数
+
+当然，如果加上类型限制符，还是可以指向成员函数的
+
+```C++
+class Multiple{
+public:
+    int Mul(int a, int b){
+        return a * b;
+    }
+};
+
+typedef int(Multiple::*Fm)(int a, int b);
+
+int main(int argc, char **argv){
+    Multiple multiple;
+    Fm f = &Multiple::Mul;
+    std::cout << (multiple.*f)(3,4);
+    return 0;
+}
+```
+
+
+
+## 二、Binding
 
 ### 逻辑层与UI层
 
@@ -303,7 +365,7 @@ class ClassAToClassBConverter : IValueConverter
 </Window>
 ```
 
-## 二、属性
+## 三、属性
 
 ### 英语中的属性
 
@@ -414,7 +476,7 @@ GlobalIndex = CLR属性名的HaseCode XOR 宿主类型HashCode
 
 附加属性的作用就是让宿主和属性解耦，让宿主的设计更为灵活
 
-## 三、事件
+## 四、事件
 
 ### 消息
 
@@ -485,7 +547,7 @@ WPF路由事件有三种策略
 - Tunnel：隧道式，激发者向其下级一层一层路由，路径有很多，但朝向响应者移动，就像形成一个隧道
 - Direct：直达式，类似CLR事件，直接向响应者发送事件
 
-## 四、命令
+## 五、命令
 
 事件不具有约束力，事件接收者使用自己的行为响应事件
 

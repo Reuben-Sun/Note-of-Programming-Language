@@ -51,6 +51,8 @@ target_link_libraries(TimeStudy TBB::tbb)
 
 ### Hello TBB
 
+一个简单的TBB示例，并行输出两行字符串
+
 ```c++
 #include <iostream>
 #include <tbb/tbb.h>
@@ -64,5 +66,23 @@ int main() {
 }
 ```
 
+我们这里使用lambda表达式创建了匿名（anonymous）函数，可以大幅简化TBB编写
 
+### 时刻查询
+
+[Code](https://github.com/Reuben-Sun/TBB--Programing-Sample/tree/main/TimeStudy)
+
+```c++
+//t0时刻
+tbb::tick_count t0 = tbb::tick_count::now();	
+...
+//当前时刻-t0时刻=经过了多长时间段（并转化为秒）
+std::cout << "Time: " << (tbb::tick_count::now() - t0).seconds() << " seconds" << std::endl;
+```
+
+
+
+## 资料
+
+[Pro TBB](https://github.com/Apress/pro-TBB)
 
