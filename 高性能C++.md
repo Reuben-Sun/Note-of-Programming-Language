@@ -137,6 +137,11 @@ void fig1_10(const std::vector<ImagePtr>& image_vector){
 
 ### parallel_for
 
+```c++
+template<typename Index, typename Func>
+Func parallel_for(Index frist, Index last, [Index step,] const Func& f);
+```
+
 上面的代码，我们将图片处理切分为几个小块，但小块内部仍然是单线程
 
 我们注意到，在图片处理时，有一个很大的循环在遍历图片上的像素点，那么能不能并行做这件事？
@@ -177,7 +182,7 @@ tbb::parallel_for(0, height,
                  );
 ```
 
-Xcode Clang至今不支持C++17的std::execution，对OpenMP的支持也相当差
+M1 Mac Xcode Clang至今不支持C++17的std::execution，对OpenMP的支持也相当差
 
 ### 快排
 
@@ -223,6 +228,7 @@ void parallelQuicksort(QV::iterator left, QV::iterator right){
 
     // recursive call
     tbb::parallel_invoke(
+      			//lambda表达式[=]表示传入当前函数所有的成员
             [=]() { parallelQuicksort(left, i); },
             [=]() { parallelQuicksort(i + 1, right); }
     );
