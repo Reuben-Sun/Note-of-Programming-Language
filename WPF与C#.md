@@ -4,7 +4,7 @@
 
 ### 委托
 
-C#的委托类似于C++的函数指针
+C#的委托类似于C++的函数指针，C#中，将参数`a,b`委托给了对象adder的Add方法，委托本质上是一种支持`()`运算符的**对象**。既然是对象，就可以有自己的成员和状态
 
 ```c#
 delegate int Func(int a, int b);
@@ -16,13 +16,28 @@ class Adder{
   
   public int Add(int a, int b){ return a+b; }
 }
-
+//Main(){...
 Adder adder = new Adder(1);
 Func f = adder.Add;
 f(2,3);	//return 6
 ```
 
-C#中，将参数`a,b`委托给了对象adder的Add方法，委托本质上是一种支持`()`运算符的**对象**。既然是对象，就可以有自己的成员和状态
+C#委托支持匿名委托和lambda表达式
+
+```c#
+delegate int Func(int a, int b);
+//Main(){...
+Func f = delegate(int a, int b){
+  cout << a+b << endl;
+};
+Func f2 = (int a, int b)=>{
+  cout << a+b << endl;
+};
+```
+
+#### C++的函数指针
+
+C/C++的函数指针是一个指向函数入口的指针，不具有对象的性质，只能指向非成员函数
 
 ```c++
 typedef int(*Func)(int a, int b);
@@ -37,8 +52,6 @@ int main(int argc, char **argv){
     return 0;
 }
 ```
-
-C++的函数指针是一个指向函数入口的指针，不具有对象的性质，只能指向非成员函数
 
 当然，如果加上类型限制符，还是可以指向成员函数的
 
@@ -58,6 +71,149 @@ int main(int argc, char **argv){
     std::cout << (multiple.*f)(3,4);
     return 0;
 }
+```
+
+如果想让C++对委托具有对象的性质，我们可以重载`()`操作符
+
+```c++
+class Adder{
+public:
+    Adder(int c){ this->c = c; }
+    int operator()(int a, int b){
+        return a+b+c;
+    }
+private:
+    int c;
+};
+
+int main(int argc, char **argv){
+    Adder adder(1);
+    std::cout << adder(2, 3);
+    return 0;
+}
+```
+
+### 事件
+
+*这里的事件指CLR事件模型，详细内容见下文*
+
+委托：把工作委托给了某个函数，可以直接调用
+
+事件：订阅者侦听发行者，发行者可以通过回调函数间接让订阅者干事（而且订阅者具体干什么，要看订阅者心情，发行者无权过问）
+
+```c#
+//事件参数
+public class MyEventArgs: EventArgs
+{
+  public string Args
+  {
+    private set;
+    get;
+  }
+  public MyEventArgs(string args)
+  {
+    Args = args;
+  }
+}
+//事件发行者
+public class EventSource
+{
+  MyEventArgs eventArgs;
+
+  public string Name;
+
+  public EventSource(string args)
+  {
+    eventArgs = new MyEventArgs(args);
+  }
+
+  public delegate void handlerEvent(Object sender, MyEventArgs args);
+
+  public event handlerEvent m_handler_event;
+
+  public void Handler()
+  {
+    m_handler_event?.Invoke(this, eventArgs);
+    //也可以写成 m_handler_event(this, eventArgs);
+  }
+}
+```
+
+```C#
+//事件订阅者
+class MainClass
+{
+  public static void Main(string[] args)
+  {
+    EventSource source = new EventSource("Event had been raised!");
+    source.Name = "Tim";
+    source.m_handler_event += new EventSource.handlerEvent(writeHello);
+    //也可以写成 source.m_handler_event += writeHello;
+    source.Handler();		//输出：Hello Tim, Event had been raised!
+  }
+
+  static void writeHello(Object sender, MyEventArgs args)
+  {
+    EventSource source = sender as EventSource;
+    Console.WriteLine($"Hello {source.Name}, {args.Args}");
+  }
+}
+```
+
+最初我很好奇，我们注册了一个处理函数，`source.m_handler_event += writeHello`，但是好像没看到怎么传参进去。
+
+其实是因为C#的委托本质是一个支持`()`运算符的对象，所有处理函数形式上跟委托一致，参数是委托对象的成员变量
+
+一个事件可以注册多个处理函数，于是事件也称为多重委托
+
+### Action
+
+泛型委托
+
+无参数`Action xxx = 函数`
+
+```c#
+public class Name
+{
+  public string InstanceName{ private set; get; }
+  public Name(string name)
+  {
+    InstanceName = name;
+  }
+  public void DisplayName()
+  {
+    Console.WriteLine($"I'm {InstanceName}");
+  }
+}
+public static void Main(string[] args)
+{
+  Name testName = new Name("Tim");
+  Action showName = testName.DisplayName;
+  showName();
+}       
+```
+
+有参数`Action<参数类型> xxx = 函数`
+
+```c#
+public class Name
+{
+  public string InstanceName{ private set; get; }
+  public Name(string name)
+  {
+    InstanceName = name;
+  }
+  public void DisplayName(string str)
+  {
+    Console.WriteLine($"I'm {InstanceName}, {str}");
+  }
+}
+public static void Main(string[] args)
+{
+  Name testName = new Name("Tim");
+  Action<string> showName = testName.DisplayName;
+  showName("HHH");
+}    
 ```
 
 
