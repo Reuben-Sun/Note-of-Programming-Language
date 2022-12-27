@@ -135,6 +135,52 @@ void fig1_10(const std::vector<ImagePtr>& image_vector){
 
 相比于TimeStudy的串型执行，流水线执行效率会更快
 
+### parallel_for
+
+上面的代码，我们将图片处理切分为几个小块，但小块内部仍然是单线程
+
+我们注意到，在图片处理时，有一个很大的循环在遍历图片上的像素点，那么能不能并行做这件事？
+
+我们并行处理每一行
+
+[Code](https://github.com/Reuben-Sun/TBB--Programing-Sample/tree/main/ParallelFor)
+
+```c++
+tbb::parallel_for(0, height,
+                  [&in_rows, &out_rows, width, gamma](int i){
+                    for(int j = 0; j < width; ++j){
+                      const ImageLib::Image::Pixel& p = in_rows[i][j];
+                      double v = 0.3 * p.bgra[2] + 0.59 * p.bgra[1] + 0.11 * p.bgra[0];
+                      double res = pow(v, gamma);
+                      if(res > ImageLib::MAX_BGR_VALUE){
+                        res = ImageLib::MAX_BGR_VALUE;
+                      }
+                      out_rows[i][j] = ImageLib::Image::Pixel(res, res, res);
+                    }
+                  }
+                 );
+```
+
+```c++
+tbb::parallel_for(0, height,
+                  [&in_rows, &out_rows, width, tints](int i){
+                    for(int j = 0; j < width; ++j){
+                      const ImageLib::Image::Pixel& p = in_rows[i][j];
+                      std::uint8_t b = (double)p.bgra[0] + (ImageLib::MAX_BGR_VALUE - p.bgra[0]) * tints[0];
+                      std::uint8_t g = (double)p.bgra[0] + (ImageLib::MAX_BGR_VALUE - p.bgra[1]) * tints[1];
+                      std::uint8_t r = (double)p.bgra[0] + (ImageLib::MAX_BGR_VALUE - p.bgra[2]) * tints[2];
+                      out_rows[i][j] = ImageLib::Image::Pixel(
+                        (b > ImageLib::MAX_BGR_VALUE) ? ImageLib::MAX_BGR_VALUE : b,
+                        (g > ImageLib::MAX_BGR_VALUE) ? ImageLib::MAX_BGR_VALUE : g,
+                        (r > ImageLib::MAX_BGR_VALUE) ? ImageLib::MAX_BGR_VALUE : r
+                      );
+                    }
+                  }
+                 );
+```
+
+
+
 ## 资料
 
 [Pro TBB](https://github.com/Apress/pro-TBB)
