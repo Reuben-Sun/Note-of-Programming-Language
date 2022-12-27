@@ -53,6 +53,8 @@ target_link_libraries(TimeStudy TBB::tbb)
 
 一个简单的TBB示例，并行输出两行字符串
 
+通过`tbb::parallel_invoke`实现任务、函数级的并行
+
 ```c++
 #include <iostream>
 #include <tbb/tbb.h>
@@ -69,8 +71,6 @@ int main() {
 我们这里使用lambda表达式创建了匿名（anonymous）函数，可以大幅简化TBB编写
 
 ### 时刻查询
-
-[Code](https://github.com/Reuben-Sun/TBB--Programing-Sample/tree/main/TimeStudy)
 
 ```c++
 //t0时刻
@@ -143,8 +143,6 @@ void fig1_10(const std::vector<ImagePtr>& image_vector){
 
 我们并行处理每一行
 
-[Code](https://github.com/Reuben-Sun/TBB--Programing-Sample/tree/main/ParallelFor)
-
 ```c++
 tbb::parallel_for(0, height,
                   [&in_rows, &out_rows, width, gamma](int i){
@@ -179,6 +177,88 @@ tbb::parallel_for(0, height,
                  );
 ```
 
+Xcode Clang至今不支持C++17的std::execution，对OpenMP的支持也相当差
+
+### 快排
+
+传统快排算法（升序）
+
+1. 在数列中取一个数作为基准数
+2. 比基准小的放在基准左边，大的放在右边
+3. 对左右两边分别快排，直到只剩一个数（左右重合）
+
+能看出，这个算法采用了分治的思想，很适合并行
+
+```c++
+#include <iostream>
+#include <vector>
+#include <tbb/tbb.h>
+
+using QV = std::vector<int>;
+//传统快排
+void quickSort(QV::iterator left, QV::iterator right){
+    if(left >= right){ return; }
+    int pivot_value = *left;
+    QV::iterator i = left, j = right - 1;
+    while(i != j){
+        while(i != j && pivot_value < *j) --j;    //从右向左找，直到找到一个比基准小的
+        while(i != j && pivot_value >= *i) ++i;   //从左往右找，直到找到一个比基准大的
+        std::iter_swap(i, j);
+    }
+    std::iter_swap(left, i);
+    quickSort(left, i);
+    quickSort(j+1, right);
+}
+//并行快排
+void parallelQuicksort(QV::iterator left, QV::iterator right){
+    if(left >= right){ return; }
+    int pivot_value =  *left;
+    QV::iterator i = left, j = right - 1;
+    while (i != j) {
+        while (i != j && pivot_value < *j) --j;
+        while (i != j && pivot_value >= *i) ++i;
+        std::iter_swap(i, j);
+    }
+    std::iter_swap(left, i);
+
+    // recursive call
+    tbb::parallel_invoke(
+            [=]() { parallelQuicksort(left, i); },
+            [=]() { parallelQuicksort(i + 1, right); }
+    );
+
+}
+
+int main() {
+    std::vector<int> nums;
+    for(int i = 0; i < 5000; ++i){
+        nums.push_back(rand() % 5000);
+    }
+  	//warmup
+    tbb::parallel_for(0, 10, [](int) {
+        tbb::tick_count t0 = tbb::tick_count::now();
+        while ((tbb::tick_count::now() - t0).seconds() < 0.01);
+    });
+
+    std::vector<int> nums2 = nums;
+    tbb::tick_count t0 = tbb::tick_count::now();
+    quickSort(nums.begin(), nums.end());
+    std::cout << "Normal Time=" << (tbb::tick_count::now() - t0).seconds() << std::endl;
+
+    tbb::tick_count t1 = tbb::tick_count::now();
+    parallelQuicksort(nums2.begin(), nums2.end());
+    std::cout << "Parallel Time=" << (tbb::tick_count::now() - t1).seconds() << std::endl;
+    return 0;
+}
+```
+
+最后结果，当数组比较大的时候，并行快排速度会更快一点
+
+```
+Normal Time=0.0023285
+Parallel Time=0.00110846
+```
+
 
 
 ## 资料
@@ -186,3 +266,5 @@ tbb::parallel_for(0, height,
 [Pro TBB](https://github.com/Apress/pro-TBB)
 
 [API Document](https://spec.oneapi.io/versions/latest/elements/oneTBB/source/nested-index.html)
+
+[代码仓库](https://github.com/Reuben-Sun/TBB--Programing-Sample)
