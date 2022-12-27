@@ -7,7 +7,7 @@
 C#的委托类似于C++的函数指针，C#中，将参数`a,b`委托给了对象adder的Add方法，委托本质上是一种支持`()`运算符的**对象**。既然是对象，就可以有自己的成员和状态
 
 ```c#
-delegate int Func(int a, int b);
+delegate int Fun(int a, int b);
 
 class Adder{
   private int c = 0;
@@ -18,19 +18,19 @@ class Adder{
 }
 //Main(){...
 Adder adder = new Adder(1);
-Func f = adder.Add;
+Fun f = adder.Add;
 f(2,3);	//return 6
 ```
 
 C#委托支持匿名委托和lambda表达式
 
 ```c#
-delegate int Func(int a, int b);
+delegate int Fun(int a, int b);
 //Main(){...
-Func f = delegate(int a, int b){
+Fun f = delegate(int a, int b){
   cout << a+b << endl;
 };
-Func f2 = (int a, int b)=>{
+Fun f2 = (int a, int b)=>{
   cout << a+b << endl;
 };
 ```
@@ -92,6 +92,91 @@ int main(int argc, char **argv){
     return 0;
 }
 ```
+
+#### Action泛型委托
+
+C#一种无返回值的泛型委托
+
+```c#
+public delegate void Action<in T>(T obj);
+```
+
+无参数`Action xxx = 函数`
+
+```c#
+public class Name
+{
+  public string InstanceName{ private set; get; }
+  public Name(string name)
+  {
+    InstanceName = name;
+  }
+  public void DisplayName()
+  {
+    Console.WriteLine($"I'm {InstanceName}");
+  }
+}
+public static void Main(string[] args)
+{
+  Name testName = new Name("Tim");
+  Action showName = testName.DisplayName;
+  showName();
+}       
+```
+
+有参数`Action<参数类型> xxx = 函数`
+
+```c#
+public class Name
+{
+  public string InstanceName{ private set; get; }
+  public Name(string name)
+  {
+    InstanceName = name;
+  }
+  public void DisplayName(string str)
+  {
+    Console.WriteLine($"I'm {InstanceName}, {str}");
+  }
+}
+public static void Main(string[] args)
+{
+  Name testName = new Name("Tim");
+  Action<string> showName = testName.DisplayName;
+  showName("HHH");
+}    
+```
+
+#### Func泛型委托
+
+C#一种有返回值的泛型委托
+
+```c#
+public delegate TResult Func<out TResult>();
+```
+
+```c#
+public class Adder
+{
+  private int c;
+  public Adder(int c) { this.c = c; }
+  public int Add(int a, int b)
+  {
+    return a + b + c;
+  }
+}
+
+public static void Main(string[] args)
+{
+  Adder adder = new Adder(1);
+  //第一个参数是返回值类型，后面的参数是输入参数类型
+  Func<int, int, int> method = adder.Add;
+  //使用时不需要写返回值参数
+  Console.WriteLine(method(2, 3));
+}
+```
+
+
 
 ### 事件
 
@@ -165,56 +250,6 @@ class MainClass
 其实是因为C#的委托本质是一个支持`()`运算符的对象，所有处理函数形式上跟委托一致，参数是委托对象的成员变量
 
 一个事件可以注册多个处理函数，于是事件也称为多重委托
-
-### Action
-
-泛型委托
-
-无参数`Action xxx = 函数`
-
-```c#
-public class Name
-{
-  public string InstanceName{ private set; get; }
-  public Name(string name)
-  {
-    InstanceName = name;
-  }
-  public void DisplayName()
-  {
-    Console.WriteLine($"I'm {InstanceName}");
-  }
-}
-public static void Main(string[] args)
-{
-  Name testName = new Name("Tim");
-  Action showName = testName.DisplayName;
-  showName();
-}       
-```
-
-有参数`Action<参数类型> xxx = 函数`
-
-```c#
-public class Name
-{
-  public string InstanceName{ private set; get; }
-  public Name(string name)
-  {
-    InstanceName = name;
-  }
-  public void DisplayName(string str)
-  {
-    Console.WriteLine($"I'm {InstanceName}, {str}");
-  }
-}
-public static void Main(string[] args)
-{
-  Name testName = new Name("Tim");
-  Action<string> showName = testName.DisplayName;
-  showName("HHH");
-}    
-```
 
 
 
