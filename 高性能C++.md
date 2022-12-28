@@ -49,11 +49,16 @@ target_link_libraries(TimeStudy TBB::tbb)
 #include<tbb/tbb.h>
 ```
 
-### Hello TBB
+### 调用函数
+
+```c++
+template<typename Func0, [...,] typename FuncN>
+void parallel_invoke(const Func0& f0, [...,] const FuncN& fN);
+```
 
 一个简单的TBB示例，并行输出两行字符串
 
-通过`tbb::parallel_invoke`实现任务、函数级的并行
+通过`tbb::parallel_invoke`实现任务、函数粒度的并行
 
 ```c++
 #include <iostream>
@@ -70,121 +75,7 @@ int main() {
 
 我们这里使用lambda表达式创建了匿名（anonymous）函数，可以大幅简化TBB编写
 
-### 时刻查询
-
-```c++
-//t0时刻
-tbb::tick_count t0 = tbb::tick_count::now();	
-...
-//当前时刻-t0时刻=经过了多长时间段（并转化为秒）
-std::cout << "Time: " << (tbb::tick_count::now() - t0).seconds() << " seconds" << std::endl;
-```
-
-并行开发中动态内存管理十分复杂、危险（内存泄漏），这里推荐使用C++11的智能指针（自带GC）
-
-### Flow Graph
-
-将函数执行制作成Graph，实现消息驱动的并行（有些类似FrameGraph）
-
-![FlowGraph](Image/FlowGraph.jpeg)
-
-[Code](https://github.com/Reuben-Sun/TBB--Programing-Sample/tree/main/FlowGraph)
-
-```c++
-void fig1_10(const std::vector<ImagePtr>& image_vector){
-    const double tint_array[] = {0.75, 0, 0};
-
-    tbb::flow::graph g;
-    int i = 0;
-    //注意，source_node已经失效
-    tbb::flow::input_node<ImagePtr> src(g,
-        [&i, &image_vector](tbb::flow_control &fc) -> ImagePtr {
-            if(i < image_vector.size()){
-                return image_vector[i++];
-            }
-            else{
-                fc.stop();
-                return {};
-            }
-    });
-    tbb::flow::function_node<ImagePtr, ImagePtr> gamma(g,
-        tbb::flow::unlimited, [] (ImagePtr img) -> ImagePtr{
-                return applyGamma(img, 1.4);
-        }
-    );
-    tbb::flow::function_node<ImagePtr, ImagePtr> tint(g,
-        tbb::flow::unlimited, [tint_array] (ImagePtr img) -> ImagePtr{
-                return applyTint(img, tint_array);
-        }
-    );
-    tbb::flow::function_node<ImagePtr> write(g,
-         tbb::flow::unlimited, [] (ImagePtr img){
-                writeImage(img);
-        }
-    );
-
-    tbb::flow::make_edge(src, gamma);
-    tbb::flow::make_edge(gamma, tint);
-    tbb::flow::make_edge(tint, write);
-    src.activate();
-    g.wait_for_all();
-}
-```
-
-最后该程序会以**流水线**的形式执行，当第一张图片完成gamma矫正，去执行tint着色时，第二张图片开始执行gamma矫正（每张图片间互不影响）
-
-相比于TimeStudy的串型执行，流水线执行效率会更快
-
-### parallel_for
-
-```c++
-template<typename Index, typename Func>
-Func parallel_for(Index frist, Index last, [Index step,] const Func& f);
-```
-
-上面的代码，我们将图片处理切分为几个小块，但小块内部仍然是单线程
-
-我们注意到，在图片处理时，有一个很大的循环在遍历图片上的像素点，那么能不能并行做这件事？
-
-我们并行处理每一行
-
-```c++
-tbb::parallel_for(0, height,
-                  [&in_rows, &out_rows, width, gamma](int i){
-                    for(int j = 0; j < width; ++j){
-                      const ImageLib::Image::Pixel& p = in_rows[i][j];
-                      double v = 0.3 * p.bgra[2] + 0.59 * p.bgra[1] + 0.11 * p.bgra[0];
-                      double res = pow(v, gamma);
-                      if(res > ImageLib::MAX_BGR_VALUE){
-                        res = ImageLib::MAX_BGR_VALUE;
-                      }
-                      out_rows[i][j] = ImageLib::Image::Pixel(res, res, res);
-                    }
-                  }
-                 );
-```
-
-```c++
-tbb::parallel_for(0, height,
-                  [&in_rows, &out_rows, width, tints](int i){
-                    for(int j = 0; j < width; ++j){
-                      const ImageLib::Image::Pixel& p = in_rows[i][j];
-                      std::uint8_t b = (double)p.bgra[0] + (ImageLib::MAX_BGR_VALUE - p.bgra[0]) * tints[0];
-                      std::uint8_t g = (double)p.bgra[0] + (ImageLib::MAX_BGR_VALUE - p.bgra[1]) * tints[1];
-                      std::uint8_t r = (double)p.bgra[0] + (ImageLib::MAX_BGR_VALUE - p.bgra[2]) * tints[2];
-                      out_rows[i][j] = ImageLib::Image::Pixel(
-                        (b > ImageLib::MAX_BGR_VALUE) ? ImageLib::MAX_BGR_VALUE : b,
-                        (g > ImageLib::MAX_BGR_VALUE) ? ImageLib::MAX_BGR_VALUE : g,
-                        (r > ImageLib::MAX_BGR_VALUE) ? ImageLib::MAX_BGR_VALUE : r
-                      );
-                    }
-                  }
-                 );
-```
-
-M1 Mac Xcode Clang至今不支持C++17的std::execution，对OpenMP的支持也相当差
-
-### 快排
+#### 快排示例
 
 传统快排算法（升序）
 
@@ -263,6 +154,391 @@ int main() {
 ```
 Normal Time=0.0023285
 Parallel Time=0.00110846
+```
+
+### 时刻查询
+
+```c++
+//t0时刻
+tbb::tick_count t0 = tbb::tick_count::now();	
+...
+//当前时刻-t0时刻=经过了多长时间段（并转化为秒）
+std::cout << "Time: " << (tbb::tick_count::now() - t0).seconds() << " seconds" << std::endl;
+```
+
+并行开发中动态内存管理十分复杂、危险（内存泄漏），这里推荐使用C++11的智能指针（自带GC）
+
+### Flow Graph
+
+将函数执行制作成Graph，实现消息驱动的并行（有些类似FrameGraph）
+
+![FlowGraph](Image/FlowGraph.jpeg)
+
+```c++
+void fig1_10(const std::vector<ImagePtr>& image_vector){
+    const double tint_array[] = {0.75, 0, 0};
+
+    tbb::flow::graph g;
+    int i = 0;
+    //注意，source_node已经失效
+    tbb::flow::input_node<ImagePtr> src(g,
+        [&i, &image_vector](tbb::flow_control &fc) -> ImagePtr {
+            if(i < image_vector.size()){
+                return image_vector[i++];
+            }
+            else{
+                fc.stop();
+                return {};
+            }
+    });
+    tbb::flow::function_node<ImagePtr, ImagePtr> gamma(g,
+        tbb::flow::unlimited, [] (ImagePtr img) -> ImagePtr{
+                return applyGamma(img, 1.4);
+        }
+    );
+    tbb::flow::function_node<ImagePtr, ImagePtr> tint(g,
+        tbb::flow::unlimited, [tint_array] (ImagePtr img) -> ImagePtr{
+                return applyTint(img, tint_array);
+        }
+    );
+    tbb::flow::function_node<ImagePtr> write(g,
+         tbb::flow::unlimited, [] (ImagePtr img){
+                writeImage(img);
+        }
+    );
+
+    tbb::flow::make_edge(src, gamma);
+    tbb::flow::make_edge(gamma, tint);
+    tbb::flow::make_edge(tint, write);
+    src.activate();
+    g.wait_for_all();
+}
+```
+
+最后该程序会以**流水线**的形式执行，当第一张图片完成gamma矫正，去执行tint着色时，第二张图片开始执行gamma矫正（每张图片间互不影响）
+
+相比于TimeStudy的串型执行，流水线执行效率会更快
+
+### 循环
+
+```c++
+template<typename Index, typename Func>
+Func parallel_for(Index frist, Index last, [Index step,] const Func& f);
+```
+
+上面的代码，我们将图片处理切分为几个小块，但小块内部仍然是单线程
+
+我们注意到，在图片处理时，有一个很大的循环在遍历图片上的像素点，那么能不能并行做这件事？
+
+我们并行处理每一行
+
+```c++
+tbb::parallel_for(0, height,
+                  [&in_rows, &out_rows, width, gamma](int i){
+                    for(int j = 0; j < width; ++j){
+                      const ImageLib::Image::Pixel& p = in_rows[i][j];
+                      double v = 0.3 * p.bgra[2] + 0.59 * p.bgra[1] + 0.11 * p.bgra[0];
+                      double res = pow(v, gamma);
+                      if(res > ImageLib::MAX_BGR_VALUE){
+                        res = ImageLib::MAX_BGR_VALUE;
+                      }
+                      out_rows[i][j] = ImageLib::Image::Pixel(res, res, res);
+                    }
+                  }
+                 );
+```
+
+```c++
+tbb::parallel_for(0, height,
+                  [&in_rows, &out_rows, width, tints](int i){
+                    for(int j = 0; j < width; ++j){
+                      const ImageLib::Image::Pixel& p = in_rows[i][j];
+                      std::uint8_t b = (double)p.bgra[0] + (ImageLib::MAX_BGR_VALUE - p.bgra[0]) * tints[0];
+                      std::uint8_t g = (double)p.bgra[0] + (ImageLib::MAX_BGR_VALUE - p.bgra[1]) * tints[1];
+                      std::uint8_t r = (double)p.bgra[0] + (ImageLib::MAX_BGR_VALUE - p.bgra[2]) * tints[2];
+                      out_rows[i][j] = ImageLib::Image::Pixel(
+                        (b > ImageLib::MAX_BGR_VALUE) ? ImageLib::MAX_BGR_VALUE : b,
+                        (g > ImageLib::MAX_BGR_VALUE) ? ImageLib::MAX_BGR_VALUE : g,
+                        (r > ImageLib::MAX_BGR_VALUE) ? ImageLib::MAX_BGR_VALUE : r
+                      );
+                    }
+                  }
+                 );
+```
+
+M1 Mac Xcode Clang至今不支持C++17的std::execution，对OpenMP的支持也相当差
+
+### 归约
+
+```c++
+template<typename Range, typename Value, typename Func, typename Reduction>
+Value parallel_reduce(const Range& range, const Value& identity, const Func& func, const Reduction& reduction);
+```
+
+#### 求最大值
+
+下面是一个vector求最大值的示例，实现机制就是将整个数组分成一个个小块（chunks），分别对小块求最值，然后将小块归约（reduce），最后求得最值（形成了一个树型结构）
+
+```c++
+int pmax(const std::vector<int> &arr){
+    int max_value = tbb::parallel_reduce(
+      			//range，扫描范围
+            tbb::blocked_range<int>(0, arr.size()),	
+      			//identity，小块数据的初始值，这里赋值为int类型的最小值-2147483648
+            std::numeric_limits<int>::min(),	
+      			//func，每个小块的处理方式
+            [&](const tbb::blocked_range<int> &r, int init) -> int{	
+                for(int i = r.begin(); i != r.end(); ++i){
+                    init = std::max(init, arr[i]);
+                }
+                return init;
+            },
+      			//reduction，小块间合并的处理方式
+            [](int x, int y) -> int{
+                return std::max(x, y);
+            }
+    );
+    return max_value;
+}
+```
+
+下面这是一个求PI的示例
+
+```c++
+double calcPI(int degree){
+    double dx = 1.0 / degree;
+    double sum = tbb::parallel_reduce(
+      			//range，扫描范围
+            tbb::blocked_range<int>(0, degree),
+      			//identity，小块数据的初始值，这里赋值为0
+            0.0,
+      			//func，每个小块的处理方式
+            [=](const tbb::blocked_range<int> &r, double init) -> double{
+                for(int i = r.begin(); i != r.end(); ++i){
+                    double x = (i + 0.5)*dx;
+                    double h = std::sqrt(1 - x*x);  //勾股定理
+                    init += h * dx;
+                }
+                return init;
+            },
+      			//reduction，小块间合并的处理方式
+            [](double x, double y) -> double{
+                return x+y;
+            }
+        );
+    return 4 * sum;
+}
+```
+
+### 扫描
+
+```c++
+template<typename Range, typename Value, typename Scan, typename Combine>
+Value parallel_scan(const Range& range, const Value& identity, const Scan& scan, const Combine& combine);
+```
+
+#### 前缀和
+
+*前缀和在图形领域也有很大的用处*
+
+对于一个数组，我们将其分为三个小块ABC
+
+```
+A.init=0, B.init=0
+scan(A), scan(B)
+
+B.init = A.ans
+C.init = A.ans + B.ans
+scan(B), scan(C)
+```
+
+最后我们只用了串行2/3的扫描时间，但是多做了1/3的扫描工作，时间减少了，但是工作量变大了
+
+```c++
+int parallelPrefix(const std::vector<int> &v, std::vector<int> &psum){
+    int N = v.size();
+    psum[0] = v[0];
+    int final_sum = tbb::parallel_scan(
+      			//range
+            tbb::blocked_range<int>(1, N),
+      			//identity
+            (int)0,
+      			//scan body
+            [&v, &psum](const tbb::blocked_range<int> &r, int sum, bool is_final_scan) -> int{
+                for(int i = r.begin(); i < r.end(); ++i){
+                    sum += v[i];
+                    if(is_final_scan){
+                        psum[i] = sum;
+                    }
+                }
+                return sum;
+            },
+      			//combine body
+            [](int x, int y){
+                return x+y;
+            }
+        );
+    return final_sum;
+}
+```
+
+#### 可见性
+
+如图，等间距摆放一个个薄板（厚度忽略不计），从最右上角向左看，能看到哪些薄板？
+
+<img src="Image/sight.png" alt="sight" style="zoom:50%;" />
+
+解题的本质就是比较夹角大小，只要夹角一直递增，就能看到
+
+```c++
+void visibility(const std::vector<double> &heights, std::vector<bool> & visible, double dx){
+    const int N = heights.size();
+    double max_angle = std::atan2(dx, heights[0] - heights[1]);
+
+    double final_max_angle = tbb::parallel_scan(
+      			//range
+            tbb::blocked_range<int>(1, N),
+      			//identity
+            0.0,
+      			//scan body
+            [&heights, &visible, dx](const tbb::blocked_range<int> &r, double max_angle, bool is_final_scan) -> double {
+                for(int i = r.begin(); i != r.end(); ++i){
+                    double my_angle = atan2(i * dx, heights[0] - heights[i]);
+                    if(my_angle >= max_angle){
+                        max_angle = my_angle;
+                    }
+                    else if(is_final_scan){
+                        visible[i] = false;
+                    }
+                }
+                return max_angle;
+            },
+      			//combine body
+            [](double a, double b){
+                return std::max(a, b);
+            }
+        );
+}
+```
+
+### parallel_do
+
+parallel_for在使用时必须指定range，但如果要处理的item数量不确定（比如在执行过程中修改itemList），那么就不能使用，这个时候我们可以使用parallel_do
+
+```c++
+template<typename Container, typename Body>
+void parallel_do(Countainer c, Body body);
+```
+
+下面是一个遍历树的示例，若一个节点的`v.first`为prime，将其`v.second`修改为true。我们不知道树有多大，于是采用递归遍历
+
+```c++
+void f(PrimesTreeElement::Ptr root){
+  PrimesTreeElement::Ptr tree_arry[] = {root};
+  tbb::parallel_do(tree_array,
+  		[](PrimesTreeElement::Ptr e, 
+        tbb::parallel_do_feeder<PrimesTreeElement::Ptr>& feeder){
+        if(e){
+          if(isPrime(e->v.first)) e->v.second = true;
+          if(e->left) feeder.add(e->left);
+          if(e->right) feeder.add(e->right);
+        }
+      }                 
+  );
+}
+```
+
+#### 前向替换
+
+前向替换（Forward Substitution）是线性代数中一种求解线性方程组的方法
+
+一般解线性方程组有两种方法：
+
+- 直接法
+  - 高斯消元法
+  - LU分解法
+- 迭代法
+
+高斯消元法：初中就学了，就是两个方程变化后相加减（也可以换元），消除变量，直到得到解。这个方法可以拓展到矩阵中，就是把线性方程转化为行阶梯矩阵（中间那个矩阵），然后简化为简化行阶梯矩阵（右边那个矩阵）
+$$
+\left[
+\begin{matrix}
+2 & 1 & -1 &|& 8	\\
+-3 & -1 & 2 & | & -11 \\
+-2 & 1 & 2 & | & -3
+\end{matrix}
+\right]
+=>
+\left[
+\begin{matrix}
+2 & 1 & -1 &|& 8	\\
+0 & 1/2 & 1/2 & | & 1 \\
+0 & 0 & -1 & | & 1
+\end{matrix}
+\right]
+=>
+\left[
+\begin{matrix}
+1 & 0 & 0 &|& 2	\\
+0 & 1 & 0 & | & 3 \\
+0 & 0 & 1 & | & -1
+\end{matrix}
+\right]
+$$
+
+前向替换法就是得到行阶梯矩阵后
+$$
+\left[
+\begin{matrix}
+a_{11} & 0 & \cdots &  0	\\
+a_{21} & a_{22} & \cdots & 0  \\
+\vdots & \vdots &\ddots & \vdots \\ 
+a_{n1} & a_{n2} &  \cdots & a_{nn}
+\end{matrix}
+\right]
+
+\left[
+\begin{array}{c}
+	x_1\\
+	x_2\\
+	\vdots\\
+	x_n\\
+\end{array}
+\right]
+=
+\left[
+\begin{array}{c}
+	b_1\\
+	b_2\\
+	\vdots\\
+	b_n\\
+\end{array}
+\right]
+$$
+能写出以下式子
+$$
+\begin{cases}	
+x_1 = b_1/a_{11} \\
+x_2 = (b_2-a_{21}x_1)/a_{22}	\\
+\ \vdots	\\
+x_n = (b_n -a_{n1}x_1-a_{n2}x_2 - \cdots -a_{nn-1}x_{n-1})/a_{nm}
+\end{cases}
+$$
+于是我们只需要从第一个式子开始，逐步向下替换，就能求出方程的解
+
+*如果是下三角矩阵，那就是后向替换*
+
+```c++
+//a是一个下三角矩阵，x、b是向量
+void fig_2_20(std::vector<double>& x, const std::vector<double>& a, std::vector<double>& b) {
+    const int N = x.size();
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < i; ++j) {
+            b[i] -= a[j + i*N] * x[j];
+        }
+        x[i] = b[i] / a[i + i*N];
+    }
+}
 ```
 
 
