@@ -533,7 +533,7 @@ $$
 
 ```c++
 //a是一个下三角矩阵，x、b是向量
-void fig_2_20(std::vector<double>& x, const std::vector<double>& a, std::vector<double>& b) {
+void serialFS(std::vector<double>& x, const std::vector<double>& a, std::vector<double>& b) {
     const int N = x.size();
     for (int i = 0; i < N; ++i) {
         for (int j = 0; j < i; ++j) {
@@ -543,6 +543,60 @@ void fig_2_20(std::vector<double>& x, const std::vector<double>& a, std::vector<
     }
 }
 ```
+
+加入分块和并行后：
+
+```c++
+void parallelFS(std::vector<double> &x, const std::vector<double> &a,
+                std::vector<double> &b) {
+  const int N = x.size();
+  const int block_size = 512;
+  const int num_blocks = N / block_size;
+  //tbb::atomic已经废弃
+  std::vector<std::atomic<char>> ref_count(num_blocks * num_blocks);
+  for (int r = 0; r < num_blocks; ++r) {
+    for (int c = 0; c <= r; ++c) {
+      if (r == 0 && c == 0)
+        ref_count[r * num_blocks + c] = 0;
+      else if (c == 0 || r == c)
+        ref_count[r * num_blocks + c] = 1;
+      else
+        ref_count[r * num_blocks + c] = 2;
+    }
+  }
+
+  using BlockIndex = std::pair<size_t, size_t>;
+  BlockIndex top_left(0, 0);
+  //tbb::parallel_do已经废弃
+  tbb::parallel_for_each(&top_left, &top_left + 1,
+                         [&](const BlockIndex &bi, tbb::feeder<BlockIndex> &feeder) {
+                           size_t r = bi.first;
+                           size_t c = bi.second;
+                           int i_start = r * block_size, i_end = i_start + block_size;
+                           int j_start = c * block_size, j_max = j_start + block_size - 1;
+                           for (int i = i_start; i < i_end; ++i) {
+                             int j_end = (i <= j_max) ? i : j_max + 1;
+                             for (int j = j_start; j < j_end; ++j) {
+                               b[i] -= a[j + i * N] * x[j];
+                             }
+                             if (j_end == i) {
+                               x[i] = b[i] / a[i + i * N];
+                             }
+                           }
+                           // add successor to right if ready
+                           if (c + 1 <= r && --ref_count[r * num_blocks + c + 1] == 0) {
+                             feeder.add(BlockIndex(r, c + 1));
+                           }
+                           // add succesor below if ready
+                           if (r + 1 < (size_t) num_blocks && --ref_count[(r + 1) * num_blocks + c] == 0) {
+                             feeder.add(BlockIndex(r + 1, c));
+                           }
+                         }
+                        );
+}
+```
+
+
 
 ## Flow Graphs
 
