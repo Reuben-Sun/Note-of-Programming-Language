@@ -421,13 +421,13 @@ void visibility(const std::vector<double> &heights, std::vector<bool> & visible,
 }
 ```
 
-### parallel_do
+### parallel_for_each
 
-parallel_for在使用时必须指定range，但如果要处理的item数量不确定（比如在执行过程中修改itemList），那么就不能使用，这个时候我们可以使用parallel_do
+parallel_for在使用时必须指定range，但如果要处理的item数量不确定（比如在执行过程中修改itemList），那么就不能使用，这个时候我们可以使用parallel_for_each
 
 ```c++
-template<typename Container, typename Body>
-void parallel_do(Countainer c, Body body);
+template <typaname InputIterator, typename Body>
+void parallel_for_each( InputIterator first, InputIterator last, Body body );
 ```
 
 下面是一个遍历树的示例，若一个节点的`v.first`为prime，将其`v.second`修改为true。我们不知道树有多大，于是采用递归遍历
@@ -435,9 +435,12 @@ void parallel_do(Countainer c, Body body);
 ```c++
 void f(PrimesTreeElement::Ptr root){
   PrimesTreeElement::Ptr tree_arry[] = {root};
-  tbb::parallel_do(tree_array,
-  		[](PrimesTreeElement::Ptr e, 
-        tbb::parallel_do_feeder<PrimesTreeElement::Ptr>& feeder){
+  //tbb::parallel_do已经废弃
+  tbb::parallel_for_each(
+        tree_array,
+        [](PrimesTreeElement::Ptr e, 
+        //tbb::parallel_do_feeder已被废弃
+        tbb::feeder<PrimesTreeElement::Ptr>& feeder){
         if(e){
           if(isPrime(e->v.first)) e->v.second = true;
           if(e->left) feeder.add(e->left);
@@ -566,9 +569,7 @@ static void warmupTBB() {
 
 对于一个项目，如果采用冷启动的方式，从零瞬间增加计算量，可能会把系统压垮，于是我们可以使用warmup，逐步提高项目负荷。
 
-### 构建图
-
-*可以与RenderGraph做对比*
+### 数据流图
 
 1. 构建图对象
 2. 创建节点，填充节点信息
@@ -603,7 +604,7 @@ void graphSample(){
 }
 ```
 
-### 节点
+#### 节点
 
 Flow Graphs有三种节点
 
@@ -611,7 +612,7 @@ Flow Graphs有三种节点
 - control flow
 - buffering
 
-#### function_node
+##### function_node
 
 ```c++
 template<typename Body>
@@ -637,7 +638,7 @@ tbb::flow::function_node<int, std::string> my_first_node(
 
 函数节点可以从他所连接（edges）其他节点获取消息，也可以使用`try_put`手动向其传递消息
 
-#### join_node
+##### join_node
 
 ```c++
 template <typename Body, typename... Bodies>
@@ -667,7 +668,20 @@ tbb::flow::function_node<std::tuple<std::string, double>, int> my_final_node{g,
                   };
 ```
 
-### 链接
+有的时候，我们需要保证`join_node`的输入的对应的。比如我想将两张照片拼成一张，我开两个节点并行读项目，再用`join_node`整合后传入merge函数节点，然而在这个过程中，我必须保证传入的两个像素点在同一位置，为此，我们可以添加一个frameNumber做标记（tags）
+
+```c++
+//使用函数对象作为tags，可以用input_port<i>读出来
+tbb::flow::join_node<std::tuple<Image, Image>, tbb::flow::tag_matching >
+    join_images_node(g, [] (Image left) { return left.frameNumber; },
+                        [] (Image right) { return right.frameNumber; } );
+...
+tbb::flow::make_edge(increase_left_node, tbb::flow::input_port<0>(join_images_node));
+tbb::flow::make_edge(increase_right_node, tbb::flow::input_port<1>(join_images_node));
+tbb::flow::make_edge(join_images_node, merge_images_node);
+```
+
+#### 链接
 
 ```c++
 template<typename Message>
@@ -685,7 +699,7 @@ make_edge(my_other_node, tbb::flow::input_port<1>(my_join_node));
 make_edge(my_join_node, my_final_node);
 ```
 
-### 激活
+#### 激活
 
 为了激活图，我们需要向图中传递消息，除了前文的`try_put`，我们也可以使用`input_port`
 
@@ -694,11 +708,44 @@ make_edge(my_join_node, my_final_node);
 my_node.activate();	//将其设为活动状态，启用消息生成
 ```
 
-### 等待
+#### 等待
 
 ```c++
 g.wait_for_all();
 ```
+
+### 性能限制
+
+Flow Graphs是一个基于Task的并行框架，当消息到达一个节点时，根据节点的并发限制，创建Task。生成的Task会进一步映射为线程（跟上一节讲的循环、算法的机制一样）
+
+真正限制Flow Graphs性能的有
+
+- 串行节点（serial node）
+- 工作线程数
+- 任务复杂度
+
+### 独立图
+
+*很像RenderGraph*
+
+|              | 数据流向图    | 独立图             |
+| ------------ | ------------- | ------------------ |
+| Edges含义    | 表示数据流向  | 表示节点的先后顺序 |
+| 信息传递方式 | 消息          | shared memory      |
+| 节点类型     | function_node | continue_node      |
+
+- 节点的先后顺序，描述的是依赖关系，只有前面节点执行结束后，后面节点才能安全、正确地执行
+
+- 独立图不使用函数节点，而是继续节点`continue_node`，节点间的消息传递使用，当传入`continue_node`的消息（`continue_msg`）数量等于该节点需要的消息数量，节点内的函数会开始执行
+- `continue_node`只关心传入的消息数量，不关心消息源。这导致独立图必须是非循环的（acyclic），因为一个物体循环发出两次消息，（在这里）等同于两个物体各发出一次消息
+
+#### 示例
+
+之前我们使用`parallel_do`实现了一份前向替换，我们现在用独立图再实现一次
+
+![前向替换](Image/前向替换.jpg)
+
+
 
 
 
