@@ -49,6 +49,14 @@ target_link_libraries(TimeStudy TBB::tbb)
 #include<tbb/tbb.h>
 ```
 
+### 在Ubuntu上安装TBB
+
+```bash
+$sudo apt-get install libtbb-dev
+```
+
+
+
 ### 调用函数
 
 ```c++
