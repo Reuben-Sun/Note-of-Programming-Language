@@ -12,7 +12,7 @@
 
 ![并发和并行](Image/并发和并行.png)
 
-## TBB
+## TBB基础
 
 TBB（Threading Building Blocks）是一个非常流行的C++并行编程（parallel programming）方案
 
@@ -539,6 +539,165 @@ void fig_2_20(std::vector<double>& x, const std::vector<double>& a, std::vector<
         x[i] = b[i] / a[i + i*N];
     }
 }
+```
+
+## Flow Graphs
+
+并行编程另一个问题是混乱，传统并行编程为了避免程序混乱（messy），我们需要事无巨细地管理每一件事。但在上一节简单提到的Flow Graphs，提供了一个简单的管理方法
+
+Flow Graphs允许我们用图（DAG）来描述程序，相比于`parallel_do`和`parallel_pipeline`，FlowGraphs自由度更高，推荐使用。
+
+- 每个节点是一个并行函数，箭头代表数据的流向/消息传递，我们将这个图称为数据流向图（data flow graphs）
+- 图也可以描述操作的前后顺序，进而可以构建一些传统方法难以表示的独立结构体，这种图被称为独立图（dependency graphs）
+
+### 预热
+
+```c++
+static void warmupTBB() {
+    //tbb::task_scheduler_init::default_num_threads()已经弃用
+    tbb::parallel_for(0, tbb::this_task_arena::max_concurrency(), [](int) {
+        tbb::tick_count t0 = tbb::tick_count::now();
+        while ((tbb::tick_count::now() - t0).seconds() < 0.01);
+    });
+}
+```
+
+无论是web服务器、CPU/GPU并行计算，深度学习，都有warmup的概念
+
+对于一个项目，如果采用冷启动的方式，从零瞬间增加计算量，可能会把系统压垮，于是我们可以使用warmup，逐步提高项目负荷。
+
+### 构建图
+
+*可以与RenderGraph做对比*
+
+1. 构建图对象
+2. 创建节点，填充节点信息
+3. 链接节点
+4. 发送消息
+5. 等待图完成
+
+```c++
+void graphSample(){
+    //创建图对象
+    tbb::flow::graph g;
+    //创建节点
+    tbb::flow::function_node<int, std::string> my_first_node(
+            g, tbb::flow::unlimited,
+            [](const int &in) -> std::string{
+                std::cout << "first node received: " << in << std::endl;
+                return std::to_string(in);
+            }
+        );
+    tbb::flow::function_node<std::string> my_second_node(
+            g, tbb::flow::unlimited,
+            [](const std::string &in){
+                std::cout << "second node received: " << in << std::endl;
+            }
+        );
+    //链接
+    tbb::flow::make_edge(my_first_node, my_second_node);
+    //发送消息
+    my_first_node.try_put(10);
+    //等待图完成
+    g.wait_for_all();
+}
+```
+
+### 节点
+
+Flow Graphs有三种节点
+
+- functional
+- control flow
+- buffering
+
+#### function_node
+
+```c++
+template<typename Body>
+function_node(graph& g, size_t concurrency, Body body);
+```
+
+函数节点，当消息传递到该节点，会被函数处理，并将输出值传递给后继者
+
+```c++
+//输入一个int类型，输出一个std::string类型
+tbb::flow::function_node<int, std::string> my_first_node(
+  					//图对象
+            g, 	
+  					//节点的并发限制，0是无限制(unlimited)，1是串行(serial)
+  					tbb::flow::unlimited,	
+  					//body
+            [](const int &in) -> std::string{
+                std::cout << "first node received: " << in << std::endl;
+                return std::to_string(in);
+            }
+        );
+```
+
+函数节点可以从他所连接（edges）其他节点获取消息，也可以使用`try_put`手动向其传递消息
+
+#### join_node
+
+```c++
+template <typename Body, typename... Bodies>
+join_node(graph&, Body, Bodies...)->join_node<std::tuple<std::decay_t<input_t<Body>>, std::decay_t<input_t<Bodies>>...>, key_matching<output_t<Body>>>;
+```
+
+流控制节点，当消息传递到该节点，会创建一个消息元组（tuple），然后将元组广播给所有后继者
+
+![join](Image/join.jpg)
+
+```c++
+//my_node，输入int，输出std::string
+tbb::flow::function_node<int, std::string> my_node{...};
+//my_other_node，输入int，输出double
+tbb::flow::function_node<int, double> my_other_node{...};
+//join节点，这里的作用是将两个节点的输出整合，传递给my_final_node
+tbb::flow::join_node<std::tuple<std::string, double>,
+            tbb::flow::queueing> my_join_node{g};
+//my_final_node，输入一个元组
+tbb::flow::function_node<std::tuple<std::string, double>, int> my_final_node{g,
+                   tbb::flow::unlimited,
+                   [](const std::tuple<std::string, double>& in) -> int {
+                     std::cout << "final: " << std::get<0>(in)
+                       << " and " << std::get<1>(in) << std::endl;
+                     return 0;
+                   }
+                  };
+```
+
+### 链接
+
+```c++
+template<typename Message>
+    inline void make_edge( sender<Message> &p, receiver<Message> &s );
+template< typename MultiOutputNode, typename MultiInputNode >
+    inline void make_edge( MultiOutputNode& output, MultiInputNode& input );
+```
+
+我们可以使用`make_edge`链接两个节点
+
+```c++
+//这里的input_port是一种sender，跟节点差不多，都能互相链接
+make_edge(my_node, tbb::flow::input_port<0>(my_join_node));
+make_edge(my_other_node, tbb::flow::input_port<1>(my_join_node));
+make_edge(my_join_node, my_final_node);
+```
+
+### 激活
+
+为了激活图，我们需要向图中传递消息，除了前文的`try_put`，我们也可以使用`input_port`
+
+```c++
+//my_node是一个input_node
+my_node.activate();	//将其设为活动状态，启用消息生成
+```
+
+### 等待
+
+```c++
+g.wait_for_all();
 ```
 
 
