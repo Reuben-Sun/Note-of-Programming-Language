@@ -19,7 +19,8 @@ TBB（Threading Building Blocks）是一个非常流行的C++并行编程（para
 - 使用Task而非Thread
   - Thread与硬件相关，直接编写难以跨平台，而且线程间通信过于频繁，过于繁琐
   - TBB使用Task编程，运行时会将程序映射到硬件上（该方法对嵌套并行的支持很不错）
-
+  - TBB任务调度使用**工作窃取**，当一个任务队列执行完毕后，核心会去其他任务队列中窃取任务，于是可以提高核心的利用率
+  
 - TBB实现了可组合性（Composability）
   - 简单来说就是支持for循环
 
@@ -133,6 +134,30 @@ void parallelQuicksort(QV::iterator left, QV::iterator right){
     );
 
 }
+//使用cutoff
+void parallelCutoffQuicksort(QV::iterator left, QV::iterator right){
+    const int cutoff = 100;
+
+    if (right - left < cutoff) {
+        quickSort(right, left);
+    }
+    else {
+        int pivot_value =  *left;
+        QV::iterator i = left, j = right - 1;
+        while (i != j) {
+            while (i != j && pivot_value < *j) --j;
+            while (i != j && pivot_value >= *i) ++i;
+            std::iter_swap(i, j);
+        }
+        std::iter_swap(left, i);
+
+        // recursive call
+        tbb::parallel_invoke(
+                [=]() { parallelQuicksort(left, i); },
+                [=]() { parallelQuicksort(i + 1, right); }
+        );
+    }
+}
 
 int main() {
     std::vector<int> nums;
@@ -163,6 +188,8 @@ int main() {
 Normal Time=0.0023285
 Parallel Time=0.00110846
 ```
+
+此外tbb进行任务分配也会有开销，因此我们往往将大任务分成若干个小任务后，让小任务串型执行，上文中的cutoff就是起到这个作用，这样往往能得到更高的性能
 
 ### 时刻查询
 
@@ -604,7 +631,68 @@ void parallelFS(std::vector<double> &x, const std::vector<double> &a,
 }
 ```
 
+### 流水线
 
+```c++
+void parallel_pipeline( size_t max_number_of_live_tokens, const filter<void,void>& filter_chain );
+
+template<typename T, typename U, typename Func>
+filter_t<T, U> make_filter(filter::mode mode, const Func& f);
+```
+
+管线（pipeline）是过滤器（filters）的线性组合，物体（items）在通过过滤器时，会被处理
+
+```c++
+//并行 将字符串中大写变小写
+void fig_2_27(int num_tokens, std::ofstream &caseBeforeFile, std::ofstream &caseAfterFile) {
+  tbb::parallel_pipeline(
+    //tokens
+    num_tokens,
+    //第一个filter，负责创建字符串
+    tbb::make_filter<void, CaseStringPtr>(
+        //tbb::filter::serial_in_order已经废弃
+        tbb::filter_mode::serial_in_order,
+        //filter body
+        [&](tbb::flow_control &fc) -> CaseStringPtr {
+            CaseStringPtr s_ptr = getCaseString(caseBeforeFile);
+            if (!s_ptr)
+              fc.stop();
+            return s_ptr;
+        }) 
+    
+    & // 链接
+    
+    //第二个filter，负责修改字符串
+    tbb::make_filter<CaseStringPtr, CaseStringPtr>(
+        //filter node
+        tbb::filter_mode::parallel,
+        //filter body
+        [](CaseStringPtr s_ptr) -> CaseStringPtr {
+        		std::transform(s_ptr->begin(), s_ptr->end(), s_ptr->begin(),
+                       [](char c) -> char {
+                         if (std::islower(c))
+                           return std::toupper(c);
+                         else if (std::isupper(c))
+                           return std::tolower(c);
+                         else
+                           return c;
+                       });
+        		return s_ptr;
+      }) 
+    
+      & //链接
+    
+      //第三个filter，负责写字符串
+    	tbb::make_filter<CaseStringPtr, void>(
+          //filter node
+          tbb::filter_mode::serial_in_order,
+          //filter body
+          [&](CaseStringPtr s_ptr) -> void {
+            	writeCaseString(caseAfterFile, s_ptr);
+          })
+      );
+}
+```
 
 ## Flow Graphs
 
@@ -613,7 +701,7 @@ void parallelFS(std::vector<double> &x, const std::vector<double> &a,
 Flow Graphs允许我们用图（DAG）来描述程序，相比于`parallel_do`和`parallel_pipeline`，FlowGraphs自由度更高，推荐使用。
 
 - 每个节点是一个并行函数，箭头代表数据的流向/消息传递，我们将这个图称为数据流向图（data flow graphs）
-- 图也可以描述操作的前后顺序，进而可以构建一些传统方法难以表示的独立结构体，这种图被称为独立图（dependency graphs）
+- 图也可以描述操作的前后顺序，进而可以构建一些传统方法难以表示的独立结构体，这种图被称为依赖图（dependency graphs）
 
 ### 预热
 
@@ -786,11 +874,11 @@ Flow Graphs是一个基于Task的并行框架，当消息到达一个节点时�
 - 工作线程数
 - 任务复杂度
 
-### 独立图
+### 依赖图
 
 *很像RenderGraph*
 
-|              | 数据流向图    | 独立图             |
+|              | 数据流向图    | 依赖图             |
 | ------------ | ------------- | ------------------ |
 | Edges含义    | 表示数据流向  | 表示节点的先后顺序 |
 | 信息传递方式 | 消息          | shared memory      |
@@ -798,10 +886,10 @@ Flow Graphs是一个基于Task的并行框架，当消息到达一个节点时�
 
 - 节点的先后顺序，描述的是依赖关系，只有前面节点执行结束后，后面节点才能安全、正确地执行
 
-- 独立图不使用函数节点，而是继续节点`continue_node`，节点间的消息传递使用，当传入`continue_node`的消息（`continue_msg`）数量等于该节点需要的消息数量，节点内的函数会开始执行
-- `continue_node`只关心传入的消息数量，不关心消息源。这导致独立图必须是非循环的（acyclic），因为一个物体循环发出两次消息，（在这里）等同于两个物体各发出一次消息
+- 依赖图不使用函数节点，而是继续节点`continue_node`，节点间的消息传递使用，当传入`continue_node`的消息（`continue_msg`）数量等于该节点需要的消息数量，节点内的函数会开始执行
+- `continue_node`只关心传入的消息数量，不关心消息源。这导致依赖图必须是非循环的（acyclic），因为一个物体循环发出两次消息，（在这里）等同于两个物体各发出一次消息
 
-构建独立图
+构建依赖图
 
 1. 创建图对象
 2. 创建节点
@@ -811,7 +899,7 @@ Flow Graphs是一个基于Task的并行框架，当消息到达一个节点时�
 
 #### 前向替换
 
-之前我们使用`parallel_for_each`实现了一份前向替换，我们现在用独立图再实现一次
+之前我们使用`parallel_for_each`实现了一份前向替换，我们现在用依赖图再实现一次
 
 ![前向替换](Image/前向替换.jpg)
 
@@ -885,7 +973,17 @@ void addEdges(std::vector<NodePtr> &nodes, int r, int c, int block_size, int num
 }
 ```
 
+### PSTL
 
+排序
+
+## Concurrent
+
+Chapter6
+
+## Task调度
+
+Chapter10
 
 ## 资料
 
