@@ -973,9 +973,66 @@ void addEdges(std::vector<NodePtr> &nodes, int r, int c, int block_size, int num
 }
 ```
 
-### PSTL
+## PSTL
 
-排序
+parallel_sort
+
+## 同步
+
+在并行编程中，我们要极力避免同步（Synchronization）和互斥（exclusion），这会严重影响性能
+
+但是很多情况下，我们不得不同步
+
+### 写冲突
+
+比如我们想要统计一张图中各种颜色出现的次数，如果是串行处理，我们就遍历每一个像素，用一个数组存储统计值
+
+```c++
+for(int i = 0; i < N; ++i){
+  hist[image[i]]++;
+}
+```
+
+但当我们想要并行处理遍历像素时，就会出现问题。如果两个线程同时读到了同一种颜色，于是都想执行`hist[p]++`，而如果该操作不支持原子（atomic）操作，就会出现写冲突
+
+#### RMW
+
+现代操作系统将很多操作设置为原子操作，该操作被视为一个完成的操作，不可分割，因此是线程安全的。比如对齐读（Aligned Read），对齐写（Aligned Write）
+
+*原子的本意就是不可分割的意思，当年化学家和物理学家认为原子是最小的粒子（尽管并非如此）*
+
+Read-Modify-Write（RMW）设计原则，可以让复杂操作原子化，当多个线程想要对某个内存进行修改时，保证线程安全并只执行一次
+
+windows原子操作的实现原理（_InterlockedIncrement）
+
+1. 读内存
+2. 计算得到新值
+3. 若内存位置仍然是原始值，则将新值写入该内存位置
+   - 若不是原始值，则在下一个循环周期中重新操作
+
+#### 锁
+
+解决并行写冲突最简单的方法就是加锁，我们给对象加一个互斥锁（mutex），写之前上锁，写完解锁，其他线程无法操作锁住的对象。而上锁解锁操作中间的代码被称为临界区（critical section），是被锁保护的部分。
+
+锁会影响性能
+
+```c++
+using my_mutex_t=tbb::spin_mutex;
+my_mutex_t my_mutex;
+std::vector<int> hist_p(num_bins);
+t0 = tbb::tick_count::now();
+parallel_for(tbb::blocked_range<size_t>{0, image.size()},
+             [&](const tbb::blocked_range<size_t>& r)
+             {
+                 my_mutex_t::scoped_lock my_lock{my_mutex};
+                 for (size_t i = r.begin(); i < r.end(); ++i)
+                   	hist_p[image[i]]++;
+             });
+```
+
+
+
+
 
 ## Concurrent
 
