@@ -801,13 +801,89 @@ Flow Graphs是一个基于Task的并行框架，当消息到达一个节点时�
 - 独立图不使用函数节点，而是继续节点`continue_node`，节点间的消息传递使用，当传入`continue_node`的消息（`continue_msg`）数量等于该节点需要的消息数量，节点内的函数会开始执行
 - `continue_node`只关心传入的消息数量，不关心消息源。这导致独立图必须是非循环的（acyclic），因为一个物体循环发出两次消息，（在这里）等同于两个物体各发出一次消息
 
-#### 示例
+构建独立图
 
-之前我们使用`parallel_do`实现了一份前向替换，我们现在用独立图再实现一次
+1. 创建图对象
+2. 创建节点
+3. 链接
+4. 发送信息
+5. 等待图完成
+
+#### 前向替换
+
+之前我们使用`parallel_for_each`实现了一份前向替换，我们现在用独立图再实现一次
 
 ![前向替换](Image/前向替换.jpg)
 
+经观察，我们发现辅对角线的块/迭代器是相互独立的，他们之间没有依赖关系（上图(b)，块BC间没有依赖，他们只需要在A之后执行就可以正确运算）
 
+经观察，同时并行计算的最大块数为辅对角线的长度，也就是图中标注的 a set of independent blocks
+
+经观察，上图(b)中每一个块需要接受两个msg，正好与block_sizes大小相等
+
+```c++
+using Node = tbb::flow::continue_node<tbb::flow::continue_msg>;
+using NodePtr = std::shared_ptr<Node>;
+NodePtr createNode(tbb::flow::graph &g, int r, int c, int block_size,
+                   std::vector<double> &x, const std::vector<double> &a, std::vector<double> &b);
+void addEdges(std::vector<NodePtr> &nodes, int r, int c, int block_size, int num_blocks);
+void dependencyGraphFS(std::vector<double> &x, const std::vector<double> &a, std::vector<double> &b){
+    const int N = x.size();
+    const int block_size = 1024;
+    const int num_blocks = N / block_size;
+		//创建num_blocks * num_blocks个节点，只不过我们只会用到下半部分
+    std::vector<NodePtr> nodes(num_blocks * num_blocks);
+    //创建图对象
+    tbb::flow::graph g;
+  	//我们从最下面一行开始向上构建
+    for(int r = num_blocks-1; r >= 0; --r){
+        for(int c = r; c >= 0; --c){
+            //创建图节点
+            nodes[r * num_blocks + c] = createNode(g, r, c, block_size, x, a, b);
+            //链接
+            addEdges(nodes, r, c, block_size, num_blocks);
+        }
+    }
+    //传入消息
+    nodes[0]->try_put(tbb::flow::continue_msg());
+    //等待完成
+    g.wait_for_all();
+}
+
+NodePtr createNode(tbb::flow::graph &g, int r, int c, int block_size,
+                   std::vector<double> &x, const std::vector<double> &a, std::vector<double> &b){
+    const int N = x.size();
+    return std::make_shared<Node>(
+            g,
+            [r, c, block_size, N, &x, &a, &b](const tbb::flow::continue_msg & msg){
+                int i_start = r * block_size, i_end = i_start + block_size;
+                int j_start = c * block_size, j_max = j_start + block_size -1;
+                //对于每个块，串行进行正向替换计算
+                for(int i = i_start; i < i_end; ++i){
+                    int j_end = (i <= j_max) ? i : j_max+1;
+                    for(int j = j_start; j < j_end; ++j){
+                        b[i] -= a[j + i*N] * x[j];
+                    }
+                    if(j_end == i){
+                        x[i] = b[i] / a[i + i*N];
+                    }
+                }
+                return msg;
+            }
+        );
+}
+
+void addEdges(std::vector<NodePtr> &nodes, int r, int c, int block_size, int num_blocks){
+    NodePtr np = nodes[r * num_blocks + c];
+  	//每个块链接自己的下面和右边，最下面和最右边不链接
+    if(c + 1 < num_blocks && r != c){
+        tbb::flow::make_edge(*np, *nodes[r * num_blocks + c + 1]);
+    }
+    if(r + 1 < num_blocks){
+        tbb::flow::make_edge(*np, *nodes[(r+1) * num_blocks + c]);
+    }
+}
+```
 
 
 
