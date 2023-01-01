@@ -77,3 +77,24 @@ $sudo apt-cache search all | wc
 $sudo apt-cache search all | grep gcc
 ```
 
+#### E: Unable to locate package
+
+如果遇到这个报错，可以执行一次更新
+
+```bash
+$sudo apt-get update
+```
+
+#### C++安装清单
+
+| 包名                          | 描述               |
+| ----------------------------- | ------------------ |
+| g++                           | C++编译器          |
+| libtbb-dev                    | tbb并行库          |
+| cmake                         | 项目构建           |
+| git                           |                    |
+| gfortran                      | fortran编译器      |
+| liblapack-dev、liblapacke-dev | BLAS和LAPACK线代库 |
+|                               |                    |
+|                               |                    |
+

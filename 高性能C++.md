@@ -640,7 +640,7 @@ template<typename T, typename U, typename Func>
 filter_t<T, U> make_filter(filter::mode mode, const Func& f);
 ```
 
-管线（pipeline）是过滤器（filters）的线性组合，物体（items）在通过过滤器时，会被处理
+管线（pipeline）是过滤器（filters）的线性序列，物体（items）在通过过滤器时，会被处理
 
 ```c++
 //并行 将字符串中大写变小写
