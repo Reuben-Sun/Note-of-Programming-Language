@@ -2,6 +2,10 @@
 
 虽说是Linux，实际上是WSL2，本文中所有出现Linux的地方，一律视为WSL2的Ubuntu
 
+你可以使用neofetch查看系统信息
+
+![neofetch](Image/neofetch.png)
+
 ### 环境搭建
 
 #### VS Code
@@ -28,24 +32,22 @@ $git config --global user.email "youremail@domain.com"
 
 ### 常用命令
 
-| 命令                   | 意义                           |                      |
-| ---------------------- | ------------------------------ | -------------------- |
-| ls -a                  | 查看当前目录内容               |                      |
-| cd 路径名              | 路径跳转                       |                      |
-| clear                  | 清空窗口                       |                      |
-| find 文件名            | 找出当前文件夹内符合条件的文件 | 支持正则             |
-| whoami                 | 查看当前用户身份               |                      |
-| pwd                    | 查看当前工作目录               |                      |
-| cat test.txt           | 查看文件内容                   |                      |
-| cat > new.txt          | 新建文件                       |                      |
-| cat file1 file2 > file | 合并文件                       |                      |
-| mkdir 文件夹名         | 创建文件夹                     | -p可以创建多级文件夹 |
-| cp src dst             | 复制文件                       |                      |
-| kill 进程名            | 杀死进程                       |                      |
-| unzip                  | 解压zip文件                    | 需要先安装unzip      |
-| rm test.txt            | 删除文件                       | -r删文件夹 -f强删    |
-
-
+| 命令                   | 意义                           |                       |
+| ---------------------- | ------------------------------ | --------------------- |
+| ls -a                  | 查看当前目录内容               |                       |
+| cd 路径名              | 路径跳转                       |                       |
+| clear                  | 清空窗口                       |                       |
+| find 文件名            | 找出当前文件夹内符合条件的文件 | 支持正则              |
+| whoami                 | 查看当前用户身份               |                       |
+| pwd                    | 查看当前工作目录               |                       |
+| cat test.txt           | 查看文件内容                   |                       |
+| cat > new.txt          | 新建文件                       |                       |
+| cat file1 file2 > file | 合并文件                       |                       |
+| mkdir 文件夹名         | 创建文件夹                     | -p可以创建多级文件夹  |
+| cp src dst             | 复制文件                       |                       |
+| kill 进程名            | 杀死进程                       |                       |
+| unzip                  | 解压zip文件                    | 需要先安装unzip       |
+| rm test.txt            | 删除文件                       | -r递归删文件夹 -f强删 |
 
 ### 文件访问
 
@@ -92,9 +94,35 @@ $sudo apt-get update
 | g++                           | C++编译器          |
 | libtbb-dev                    | tbb并行库          |
 | cmake                         | 项目构建           |
-| git                           |                    |
+| git                           | 版本管理           |
 | gfortran                      | fortran编译器      |
 | liblapack-dev、liblapacke-dev | BLAS和LAPACK线代库 |
+| gdb                           | 调试器             |
 |                               |                    |
-|                               |                    |
+
+### Git使用
+
+#### 拉取项目
+
+项目拉取有两种常见方法
+
+- ssh：需要配置SSH Key，只能拉自己的项目，但不提交时不需要账号密码
+
+- https：非常方便，只需要git clone，而且可以拉别人的项目，但提交时需要输入账号密码
+  - 其实你也可以在输入一次密码后输入
+
+```bash
+$git config --global credential.helper store
+```
+
+我们这里说的密码是token，可以去[Github](https://github.com/settings/tokens)生成token
+
+#### 提交
+
+```bash
+#添加要提交的内容
+$git add 文件名/文件夹名
+#提交所有内容（不包含忽略文件），并设置提交信息为“这是一段话”
+$git commit -a -m 这是一段话
+```
 

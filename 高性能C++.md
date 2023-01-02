@@ -310,6 +310,10 @@ template<typename Range, typename Value, typename Func, typename Reduction>
 Value parallel_reduce(const Range& range, const Value& identity, const Func& func, const Reduction& reduction);
 ```
 
+树形规约
+
+<img src="Image/树形归并.png" alt="树形归并" style="zoom:50%;" />
+
 #### 求最大值
 
 下面是一个vector求最大值的示例，实现机制就是将整个数组分成一个个小块（chunks），分别对小块求最值，然后将小块归约（reduce），最后求得最值（形成了一个树型结构）
@@ -1017,10 +1021,12 @@ windows原子操作的实现原理（_InterlockedIncrement）
 锁会影响性能
 
 ```c++
+//tbb::task_scheduler_init init{nth}已经弃用，用于设置最大线程数
+tbb::global_control global_limit(tbb::global_control::max_allowed_parallelism, nth);
+
 using my_mutex_t=tbb::spin_mutex;
 my_mutex_t my_mutex;
 std::vector<int> hist_p(num_bins);
-t0 = tbb::tick_count::now();
 parallel_for(tbb::blocked_range<size_t>{0, image.size()},
              [&](const tbb::blocked_range<size_t>& r)
              {
@@ -1030,7 +1036,166 @@ parallel_for(tbb::blocked_range<size_t>{0, image.size()},
              });
 ```
 
+#### 原子操作
 
+锁过于消耗性能，原子操作效果会好一些，只不过这样还是比线性慢，而且不是真共享（Sharing）
+
+```c++
+std::vector<std::atomic<int>> hist_p2(num_bins);
+parallel_for(tbb::blocked_range<size_t>{0, image.size()}, 
+             [&](const tbb::blocked_range<size_t>& r)
+             {
+                 for(size_t i = r.begin(); i < r.end(); ++i)
+                 {
+                     hist_p2[image[i]]++;
+                 }
+             }
+            );
+```
+
+### Thread Local Storage
+
+一个较好的解决方案是私有化（Privatization）和归并（Reduction）
+
+我感觉这个的设计理念就是：如果不得不同步，那就尽可能让更多更复杂的计算并行执行，最后对统一、规范、简单的数据进行同步
+
+前面并行统计Image像素信息时，会出现多个线程写冲突。但如果让每个线程都有一个Image副本，线程对自己的副本进行操作（私有化），最后将这些副本进行归并。
+
+私有化确实不会出现写冲突了，尽管归并仍然存在同步问题，但这个归并更简单，毕竟归并几个数，远远比处理几个线程冲突要简单，性能开销小
+
+TBB提供了多种私有化+归并的的方案，其中归并模板（parallel_reduce）在TBB基础时就讲了
+
+- Thread Local Storage（TLS）：让每一个线程拥有一份副本，只不过存储开销过大，不宜过多使用
+  - enumerable_thread_specific（ETS）
+  - combinable
+
+#### ETS
+
+`tbb::enumerable_thread_specific<T>`对象是一个大容器，容器内包含者每一个线程所对应的副本，我们可以使用迭代器进行访问
+
+```c++
+using vector_t = std::vector<int>;
+using priv_h_t = tbb::enumerable_thread_specific<vector_t>;
+priv_h_t priv_h{num_bins};
+//私有化
+parallel_for(tbb::blocked_range<size_t>{0, image.size()},
+             [&](const tbb::blocked_range<size_t>& r)
+             {
+                 //若该线程第一次使用local，那么会创建一个新的vector<int>，初始值为0
+                 priv_h_t::reference my_hist = priv_h.local();
+                 for (size_t i = r.begin(); i < r.end(); ++i){
+                     //my_hist是引用，实际上是在修改priv_h[xxx]，以此将数据传递到线程外
+                     my_hist[image[i]]++;
+                 }     
+             });
+//归并
+vector_t hist_p3(num_bins);
+for(auto i=priv_h.begin(); i!=priv_h.end(); ++i){
+    for (int j=0; j<num_bins; ++j) {
+    	hist_p3[j]+=(*i)[j];
+    }
+}
+```
+
+使用STL算法替代循环，进行归并
+
+```c++
+//我们可以使用transform替代循环遍历
+for (auto& i: priv_h) { // i traverses all private vectors
+    std::transform(hist_p3.begin(),    // source 1 begin
+                   hist_p3.end(),      // source 1 end
+                   i.begin(),          // source 2 begin
+                   hist_p3.begin(),    // destination begin
+                   std::plus<int>() ); // binary operation
+	}
+```
+
+由于归并过于常用，TBB也对归并做了封装
+
+```c++
+//使用combine_each
+priv_h.combine_each([&](vector_t i){
+        std::transform(hist_p3.begin(),   	// source 1 begin
+                   hist_p3.end(),      		// source 1 end
+                   i.begin(),         		// source 2 begin
+                   hist_p3.begin(),    		// destination begin
+                   std::plus<int>() );		// binary operation
+    });
+//或者使用combine
+vector_t hist_p = priv_h.combine([](vector_t a, vector_t b) -> vector_t {
+      std::transform(a.begin(),         // source 1 begin
+                     a.end(),           // source 1 end
+                     b.begin(),         // source 2 begin
+                     a.begin(),         // destination begin
+                     std::plus<int>() );// binary operation
+       return a;
+    });
+```
+
+#### combinable
+
+`combinable<T>`对象也是一个容器，每一个线程对应一个instance
+
+但是与ETS不同，`combinable<T>`并不能使用迭代器访问，这样设计的目的是不向外暴露对象，这样归并结束后大容器和其中的数据都释放了，以此节省局部空间
+
+```c++
+//combinable
+tbb::combinable<vector_t> priv_h2{[num_bins](){return vector_t(num_bins);}};
+//私有化
+parallel_for(tbb::blocked_range<size_t>{0, image.size()},
+             [&](const tbb::blocked_range<size_t>& r)
+             {
+                 vector_t& my_hist = priv_h2.local();
+                 for (size_t i = r.begin(); i < r.end(); ++i)
+                     my_hist[image[i]]++;
+             });
+//归并
+vector_t hist_p4(num_bins);
+priv_h2.combine_each([&](vector_t i)
+                     { // for each priv histogram a
+                         std::transform(hist_p4.begin(),     // source 1 begin
+                                        hist_p4.end(),      // source 1 end
+                                        i.begin(),          // source 2 begin
+                                        hist_p4.begin(),    // destination begin
+                                        std::plus<int>() ); // binary operation
+                     });
+```
+
+最终性能比较，能看出TLS能大幅提高性能
+
+```
+Serial:       0.399203
+Parallel:     2.01466
+Atomic:       0.500326
+ETC:          0.0348115
+combinable:   0.0339478
+```
+
+### parallel_reduce
+
+最简单的归并，还是给用tbb封装好的模板，该算法的本质是树形规约
+
+```c++
+//parallel_reduce
+using image_iterator = std::vector<uint8_t>::iterator;
+t0 = tbb::tick_count::now();
+vector_t hist_p5 = parallel_reduce (
+    /*range*/    
+    tbb::blocked_range<image_iterator>{image.begin(), image.end()},
+    /*identity*/ 
+    vector_t(num_bins),
+    // 1st Lambda: Parallel computation on private histograms
+    [](const tbb::blocked_range<image_iterator>& r, vector_t v) {
+        std::for_each(r.begin(), r.end(),
+                      [&v](uint8_t i) {v[i]++;});
+        return v;
+    },
+    // 2nd Lambda: Parallel reduction of the private histograms
+    [num_bins](vector_t a, const vector_t & b) -> vector_t {
+        for(int i=0; i<num_bins; ++i) a[i] += b[i];
+        return a;
+});
+```
 
 
 
