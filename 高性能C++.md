@@ -314,6 +314,8 @@ Value parallel_reduce(const Range& range, const Value& identity, const Func& fun
 
 <img src="Image/树形归并.png" alt="树形归并" style="zoom:50%;" />
 
+![reduce](Image/reduce.png)
+
 #### 求最大值
 
 下面是一个vector求最大值的示例，实现机制就是将整个数组分成一个个小块（chunks），分别对小块求最值，然后将小块归约（reduce），最后求得最值（形成了一个树型结构）
