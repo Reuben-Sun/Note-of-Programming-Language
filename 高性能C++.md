@@ -1284,13 +1284,58 @@ TBB动态内存分配的核心是线程内存池（memory pooling by threads）�
 
 TBB还提供了可拓展的缓存对齐，比`std::aligned_alloc`使用更简单方便。只不过滥用缓存对齐可能会带了巨大的内存浪费
 
-在并行编程中，内存分配的主要问题是：分配器、缓存的争用
+在并行编程中，内存分配的主要问题是：分配器的争用，缓存效果
 
-### 可拓展的内存分配
+- 分配器争用：C++内存分存储在两个位置，堆和栈。传统的非线程分配器只能在单个全局堆中分配和释放内存，这个过程配合锁以实现互斥，很低效
+- 缓存效果：某些操作可能会把缓存中的数据移动到缓存的另一处，这是很无效的行为，要避免
 
+### 缓存填充
 
+基于局部性原则，当CPU查询某个数据时：
 
+1. 若cache中没有找到，就会去内存中寻找
+2. 找到后会将该数据写入cache（时间局部性，刚刚被引用过的一个内存位置容易再次被引用）
+3. 并将其相邻元素也写入cache（空间局部性，一个内存位置被引用，其相邻位置很可能马上被引用）
 
+![空间局部性](Image/空间局部性.png)
+
+如上图，CPU访问a时，先去cache去找，如果cache中没有，就会去内存中寻找，找到后将a和相邻的b写入cache的**同一行**。但问题出现了，如果当前cache的其他行里，已经有b了呢？
+
+另一个线程也拥有一缓存行，里面存储了b，结果b却被移动到a那一行了，于是这个线程要访问b，又要去内存中找，增加了cache miss。此外多线程中，a那个线程多半是不会用到b的，于是平白做了cache位置的移动。
+
+这个现象被称为假共享（false sharing），a和b并不是共享对象，但是由于他们靠的太近了，以至于在一个缓存行中，其中一个对象的更新，会强制另一个对象更新。
+
+在多线程中，假共享可以通过缓存填充（cache padding）解决。缓存填充，就是在缓存中两个变量中间填充一些没有意义的数据，于是导致这两个变量不会处于同一个缓存行中，于是避免了假共享。
+
+我们还是以统计图片像素为例，我们发现这种方法比直接用原子操作要快一些
+
+```c++
+struct bin{
+    std::atomic<int> count; //4 bytes
+    uint8_t padding[64 - sizeof(count)];    //60 bytes
+};
+//cache padding
+std::vector<bin, tbb::cache_aligned_allocator<bin>> hist_p6(num_bins);
+t0 = tbb::tick_count::now();
+parallel_for(tbb::blocked_range<size_t>{0, image.size()},
+             [&](const tbb::blocked_range<size_t>& r)
+             {
+               for(size_t i = r.begin(); i < r.end(); ++i)
+               {
+                 hist_p6[image[i]].count++;
+               }
+             }
+            );
+```
+
+我们可以用C++特性来创建结构体：
+
+```c++
+struct bin{
+    //C++17后，可以用std::hardware_destructive_interference_size替代64
+    alignas(64) std::atomic<int> count;
+};
+```
 
 
 
