@@ -1212,6 +1212,19 @@ vector_t hist_p5 = parallel_reduce (
 
 ## 并发
 
+- 顺序表（Sequences）
+  - `concurrent_vector`
+- 队列（Queues）
+  - `concurrent_queue`
+  - `concurrent_bounded_queue`
+  - `concurrent_priority_queue`
+- 无序关联容器（Unordered associative containers）
+  - `concurrent_hash_map`
+  - `map/multimap`
+  - `set/multiset`
+- 有序关联容器（Ordered associative containers）
+  - `map/multimap`
+  - `set/multiset`
 在上一节我们遇到了同步问题，处理同步会大幅降低性能，为此我们使用了TLS等方法实现了高效的显式同步，而这一节，我们将介绍TBB的核心，并发（Concurrent）
 
 TBB提供了一些高效、线程安全的并发容器，他们大多是使用细粒度的锁或者无锁设计
@@ -1220,6 +1233,134 @@ TBB提供了一些高效、线程安全的并发容器，他们大多是使用�
 - 无锁：有的线程负责操作，有的线程负责纠错
 
 TBB的并发容器并发性能很好，但串行性能不如STL
+
+
+
+### concurrent_hash_map
+
+```c++
+template <typename Key, typename T,
+                 typename HashCompare = tbb_hash_compare<Key>,
+                 typename Allocator = tbb_allocator<std::pair<const Key, T>>>
+class concurrent_hash_map {..}
+```
+
+这是一个字符串-Int的哈希表
+
+```c++
+//HashCompare必须有hash函数和equal函数
+struct MyHashCompare{
+    static size_t hash(const std::string& s){
+        size_t h = 0;
+        for(auto &c : s){
+            h = (h*17)^c;
+        }
+        return h;
+    }
+    static bool equal(const std::string& x, const std::string& y){
+        return x == y;
+    }
+};
+//hash map
+typedef tbb::concurrent_hash_map<std::string, int, MyHashCompare> StringTable;
+//一个函数对象，用于记录table内元素数量
+class Tally{
+private:
+    StringTable& table;
+public:
+    Tally(StringTable& table_): table(table_) {}
+    void operator() (const tbb::blocked_range<std::string*> range) const {
+        for(std::string* p = range.begin(); p != range.end(); ++p){
+          	//accessor类似于锁、智能智能，在accessor完成前，其他线程不能lookup这个key
+            StringTable::accessor a;
+            table.insert(a, *p);
+            a->second += 1;
+        }
+    }
+};
+```
+
+```c++
+int main() {
+    StringTable table;
+    tbb::parallel_for( tbb::blocked_range<std::string*>( Data, Data+N, 1000 ), Tally(table) );
+
+    for( StringTable::iterator i=table.begin();
+         i!=table.end();
+         ++i )
+        printf("%s %d\n",i->first.c_str(),i->second);
+    return 0;
+}
+```
+
+## 内存分配
+
+内存分配最重要的是正确，TBB提供了一套可拓展的内存分配
+
+现代C++推荐使用智能指针进行内存管理，不推荐使用malloc和new。TBB完全适配所有版本的C++标准，也推荐使用智能指针进行内存分配
+
+TBB动态内存分配的核心是线程内存池（memory pooling by threads），该内存池可以避免内存分配带来的性能下降，也不苛求“避免cache间不必要的数据移动”
+
+TBB还提供了可拓展的缓存对齐，比`std::aligned_alloc`使用更简单方便。只不过滥用缓存对齐可能会带了巨大的内存浪费
+
+在并行编程中，内存分配的主要问题是：分配器的争用，缓存效果
+
+- 分配器争用：C++内存分存储在两个位置，堆和栈。传统的非线程分配器只能在单个全局堆中分配和释放内存，这个过程配合锁以实现互斥，很低效
+- 缓存效果：某些操作可能会把缓存中的数据移动到缓存的另一处，这是很无效的行为，要避免
+
+### 缓存填充（对齐）
+
+用于解决假共享（我们在同步那一节解决了真共享带来的问题）
+
+基于局部性原则，当CPU查询某个数据时：
+
+1. 若cache中没有找到，就会去内存中寻找
+2. 找到后会将该数据写入cache（时间局部性，刚刚被引用过的一个内存位置容易再次被引用）
+3. 并将其相邻元素也写入cache（空间局部性，一个内存位置被引用，其相邻位置很可能马上被引用）
+
+![空间局部性](Image/空间局部性.png)
+
+如上图，CPU访问a时，先去cache去找，如果cache中没有，就会去内存中寻找，找到后将a和相邻的b写入cache的**同一行**。但问题出现了，如果当前cache的其他行里，已经有b了呢？
+
+另一个线程也拥有一缓存行，里面存储了b，结果b却被移动到a那一行了，于是这个线程要访问b，又要去内存中找，增加了cache miss。此外多线程中，a那个线程多半是不会用到b的，于是平白做了cache位置的移动。
+
+这个现象被称为假共享（false sharing），a和b并不是共享对象，但是由于他们靠的太近了，以至于在一个缓存行中，其中一个对象的更新，会强制另一个对象更新。
+
+在多线程中，假共享可以通过缓存填充（cache padding）解决。缓存填充，就是在缓存中两个变量中间填充一些没有意义的数据，于是导致这两个变量不会处于同一个缓存行中，于是避免了假共享。
+
+我们还是以统计图片像素为例，我们发现这种方法比直接用原子操作要快一些
+
+```c++
+struct bin{
+    std::atomic<int> count; //4 bytes
+    uint8_t padding[64 - sizeof(count)];    //60 bytes
+};
+//cache padding
+std::vector<bin, tbb::cache_aligned_allocator<bin>> hist_p6(num_bins);
+t0 = tbb::tick_count::now();
+parallel_for(tbb::blocked_range<size_t>{0, image.size()},
+             [&](const tbb::blocked_range<size_t>& r)
+             {
+               for(size_t i = r.begin(); i < r.end(); ++i)
+               {
+                 hist_p6[image[i]].count++;
+               }
+             }
+            );
+```
+
+我们可以用C++特性来创建结构体：
+
+```c++
+struct bin{
+    //C++17后，可以用std::hardware_destructive_interference_size替代64
+    alignas(64) std::atomic<int> count;
+};
+```
+
+### 代理
+
+TBB的TBBmalloc库使用代理方法，可以实现在不同操作系统，不改变代码，只需要配置一些动态库、代理库、环境变量，就可以实现全局替换new、malloc等分配函数，这对跨平台真的很重要
 
 
 
