@@ -1203,7 +1203,96 @@ vector_t hist_p5 = parallel_reduce (
 
 ## Concurrent
 
-Chapter6
+- 顺序表（Sequences）
+  - `concurrent_vector`
+- 队列（Queues）
+  - `concurrent_queue`
+  - `concurrent_bounded_queue`
+  - `concurrent_priority_queue`
+- 无序关联容器（Unordered associative containers）
+  - `concurrent_hash_map`
+  - `map/multimap`
+  - `set/multiset`
+- 有序关联容器（Ordered associative containers）
+  - `map/multimap`
+  - `set/multiset`
+
+### concurrent_hash_map
+
+```c++
+template <typename Key, typename T,
+                 typename HashCompare = tbb_hash_compare<Key>,
+                 typename Allocator = tbb_allocator<std::pair<const Key, T>>>
+class concurrent_hash_map {..}
+```
+
+这是一个字符串-Int的哈希表
+
+```c++
+//HashCompare必须有hash函数和equal函数
+struct MyHashCompare{
+    static size_t hash(const std::string& s){
+        size_t h = 0;
+        for(auto &c : s){
+            h = (h*17)^c;
+        }
+        return h;
+    }
+    static bool equal(const std::string& x, const std::string& y){
+        return x == y;
+    }
+};
+//hash map
+typedef tbb::concurrent_hash_map<std::string, int, MyHashCompare> StringTable;
+//一个函数对象，用于记录table内元素数量
+class Tally{
+private:
+    StringTable& table;
+public:
+    Tally(StringTable& table_): table(table_) {}
+    void operator() (const tbb::blocked_range<std::string*> range) const {
+        for(std::string* p = range.begin(); p != range.end(); ++p){
+          	//accessor类似于锁、智能智能，在accessor完成前，其他线程不能lookup这个key
+            StringTable::accessor a;
+            table.insert(a, *p);
+            a->second += 1;
+        }
+    }
+};
+```
+
+```c++
+int main() {
+    StringTable table;
+    tbb::parallel_for( tbb::blocked_range<std::string*>( Data, Data+N, 1000 ), Tally(table) );
+
+    for( StringTable::iterator i=table.begin();
+         i!=table.end();
+         ++i )
+        printf("%s %d\n",i->first.c_str(),i->second);
+    return 0;
+}
+```
+
+## 内存分配
+
+内存分配最重要的是正确，TBB提供了一套可拓展的内存分配
+
+现代C++推荐使用智能指针进行内存管理，不推荐使用malloc和new。TBB完全适配所有版本的C++标准，也推荐使用智能指针进行内存分配
+
+TBB动态内存分配的核心是线程内存池（memory pooling by threads），该内存池可以避免内存分配带来的性能下降，也不苛求“避免cache间不必要的数据移动”
+
+TBB还提供了可拓展的缓存对齐，比`std::aligned_alloc`使用更简单方便。只不过滥用缓存对齐可能会带了巨大的内存浪费
+
+在并行编程中，内存分配的主要问题是：分配器、缓存的争用
+
+### 可拓展的内存分配
+
+
+
+
+
+
 
 ## Task调度
 
