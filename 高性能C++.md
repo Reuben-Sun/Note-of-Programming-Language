@@ -987,7 +987,7 @@ parallel_sort
 
 在并行编程中，我们要极力避免同步（Synchronization）和互斥（exclusion），这会严重影响性能
 
-但是很多情况下，我们不得不同步
+但是很多情况下，我们不得不同步，书中称其为“必要之恶”（necessary evil）
 
 ### 写冲突
 
@@ -1032,6 +1032,7 @@ std::vector<int> hist_p(num_bins);
 parallel_for(tbb::blocked_range<size_t>{0, image.size()},
              [&](const tbb::blocked_range<size_t>& r)
              {
+                 //这种写法比my_lock.acquire(my_mutex)、my_lock.release()好
                  my_mutex_t::scoped_lock my_lock{my_mutex};
                  for (size_t i = r.begin(); i < r.end(); ++i)
                    	hist_p[image[i]]++;
@@ -1041,6 +1042,14 @@ parallel_for(tbb::blocked_range<size_t>{0, image.size()},
 #### 原子操作
 
 锁过于消耗性能，原子操作效果会好一些，只不过这样还是比线性慢，而且不是真共享（Sharing）
+
+什么是原子？原子的原意就是不可分割的基本粒子，我们在实现`a++`时，本质是分了三步
+
+1. 取a
+2. 加法运算
+3. 写a
+
+由于并行计算，其他线程可能在你完整完成这三步期间进行操作，于是就会出现冲突。而原子操作就是将这三步视为一步，不可分割，在完整完成这三部之前，其他线程无权访问，等到操作结束
 
 ```c++
 std::vector<std::atomic<int>> hist_p2(num_bins);
@@ -1201,7 +1210,16 @@ vector_t hist_p5 = parallel_reduce (
 
 
 
-## Concurrent
+## 并发容器
+
+在上一节我们遇到了同步问题，处理同步会大幅降低性能，为此我们使用了TLS等方法实现了高效的显式同步，而这一节，我们将介绍TBB的核心，并发（Concurrent）
+
+TBB提供了一些高效、线程安全的并发容器，他们大多是使用细粒度的锁或者无锁设计
+
+- 细粒度锁：指锁定真正需要锁定的地方（其实还是挺低效的），比如一个数组我们只锁我们需要的某一个元素，其他线程如果不访问我这个元素，就能正常并行
+- 无锁：有的线程负责操作，有的线程负责纠错
+
+TBB的并发容器并发性能很好，但串行性能不如STL
 
 - 顺序表（Sequences）
   - `concurrent_vector`
@@ -1287,7 +1305,7 @@ TBB还提供了可拓展的缓存对齐，比`std::aligned_alloc`使用更简单
 在并行编程中，内存分配的主要问题是：分配器的争用，缓存效果
 
 - 分配器争用：C++内存分存储在两个位置，堆和栈。传统的非线程分配器只能在单个全局堆中分配和释放内存，这个过程配合锁以实现互斥，很低效
-- 缓存效果：某些操作可能会把缓存中的数据移动到缓存的另一处，这是很无效的行为，要避免
+- 缓存效应：某些操作可能会把缓存中的数据移动到缓存的另一处，这是很无效的行为，要避免
 
 ### 缓存填充（对齐）
 
