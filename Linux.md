@@ -100,6 +100,21 @@ $sudo apt-get update
 | gdb                           | 调试器             |
 |                               |                    |
 
+#### python2安装
+
+```bash
+$sudo apt install python2.7
+$sudo apt install python-pip
+```
+
+你可以选择设置别名（不太推荐），找到`~/.bashrc`，添加
+
+```bash
+alias python=/usr/bin/python2.7
+```
+
+
+
 ### Git使用
 
 #### 拉取项目
